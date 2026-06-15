@@ -26,7 +26,12 @@ export async function POST(request: NextRequest) {
       return Response.json({ success: false, message: validation.message }, { status: validation.status });
     }
 
-    await submitReadingsInDb(body.clientId, validation.month, body.readings);
+    await submitReadingsInDb(
+      body.clientId,
+      validation.month,
+      body.readings,
+      Object.fromEntries(validation.meters.map((meter) => [meter.id, meter.previousReading])),
+    );
 
     try {
       const settings = await loadPublicContactSettings();

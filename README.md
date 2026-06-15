@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.8` (see [Changelog](#changelog))
+**Current version:** `1.0.10` (see [Changelog](#changelog))
 
 ---
 
@@ -28,6 +28,7 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 - **Supabase** (Postgres) when env is configured
 - **`app_settings`** singleton (`id = 1`) — `app_name` for branding in nav and home subtitle
 - **`readings_submissions`**, **`admin_audit_log`** — publiskie iesniegumi un admin audit (`008`)
+- **`meters.baseline_reading`** — skaitītāja rādījums uz skaitītāja; netiek pārrakstīts pēc iesniegšanas (`009`); patēriņš adminā
 - **`contact_settings`**, **`clients`**, **`meters`** — admin CRUD (migrācijas `005`, `006` sākuma dati)
 - **`admin_users`** — administratoru e-pasta whitelist (`002`–`004`)
 - App tables use **service-role server access** with RLS deny policies for browser clients
@@ -122,7 +123,7 @@ npm run db:test
 
 **Service role:** glabājiet `SUPABASE_SERVICE_ROLE_KEY` tikai servera ENV (Vercel). Pēc iespējamā noplūdes incidenta — rotējiet atslēgu Supabase Dashboard → API un atjauniniet deploy ENV.
 
-**Schema:** `supabase/migrations/` — `001`–`008`; `schema_migrations` (auto-managed by migrate script)
+**Schema:** `supabase/migrations/` — `001`–`009`; `schema_migrations` (auto-managed by migrate script). Pēc `009` obligāti `npm run db:migrate`.
 
 ---
 
@@ -169,7 +170,9 @@ app/
 │       └── page.tsx         # AdminPanel
 ├── api/
 │   ├── admin/               # settings, clients, meters (auth + CSRF)
-│   └── public/submissions/  # publiskie rādījumi (rate limit)
+│   └── public/
+│       ├── lookup/          # GET — klienta meklēšana serverī
+│       └── submissions/     # POST — rādījumi (signed token, rate limit)
 ├── auth/
 │   ├── callback/
 │   └── auth-code-error/
@@ -181,8 +184,8 @@ app/
 │   └── ui/                  # action-button, icon-input, table-empty-row, feedback-toast, …
 └── lib/
     ├── auth/
-    ├── security/            # rate-limit, admin-api CSRF, audit-log
-    ├── utility/             # types, repository, schemas, faq-items
+    ├── security/            # rate-limit, admin-api CSRF, audit-log, lookup-token
+    ├── utility/             # types, repository, schemas, faq-items, contact-email
     ├── format-date.ts
     ├── settings/
     └── supabase/
@@ -229,6 +232,16 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.10
+
+- **Sākums** — rādījumu formas atpakaļ pogas ar tekstu **„Atpakaļ”** (bez tooltip); t.sk. „nav skaitītāju” ekrāns
+
+### v1.0.9
+
+- **Patēriņš** — `baseline_reading` (`009`); iesniegumos saglabāts iepriekšējais rādījums; admin „Iesnieguši” rāda patēriņu pret skaitītāja rādījumu
+- **Skaitītājs** — lauks „Skaitītāja rādījums uz skaitītāja” (admin modālis + publiskā forma); repozitorijs strādā arī pirms migrācijas `009`
+- **UI** — FAQ kartītes bez ārējā fona; rādījumu apstiprinājuma/„jau iesniegti” pogas ar tekstu un **Nr.** boldā; admin „Iziet” bez border
 
 ### v1.0.8
 

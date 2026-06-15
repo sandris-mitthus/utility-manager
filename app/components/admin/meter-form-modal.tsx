@@ -60,7 +60,7 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
   const [verificationDateDisplay, setVerificationDateDisplay] = useState(
     isoToDisplayDate(meter.verificationDate),
   );
-  const [previousReading, setPreviousReading] = useState(meter.previousReading);
+  const [baselineReading, setBaselineReading] = useState(meter.baselineReading);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
     isExisting ? meter.clientId || null : null,
   );
@@ -97,7 +97,7 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
       return true;
     }
 
-    if (previousReading !== meter.previousReading) {
+    if (baselineReading !== meter.baselineReading) {
       return true;
     }
 
@@ -108,7 +108,7 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
     type,
     location,
     verificationDateDisplay,
-    previousReading,
+    baselineReading,
     selectedClientId,
     initialClientId,
     meter,
@@ -163,7 +163,8 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
         location: trimmedLocation,
         clientId: selectedClientId,
         verificationDate,
-        previousReading,
+        baselineReading,
+        previousReading: isExisting ? meter.previousReading : baselineReading,
       });
 
       if (!result.ok) {
@@ -343,15 +344,15 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
           </div>
           <div>
             <label htmlFor="meter-previous" className={labelClassName}>
-              Iepriekšējā perioda rādījums
+              Skaitītāja rādījums uz skaitītāja
             </label>
             <IconInput
               id="meter-previous"
               type="number"
               min="0"
               step="0.1"
-              value={previousReading}
-              onChange={(event) => setPreviousReading(Number(event.target.value))}
+              value={baselineReading}
+              onChange={(event) => setBaselineReading(Number(event.target.value))}
               placeholder="piem., 125.4"
               icon={<IconChart className="size-4" />}
               wrapperClassName="mt-1"

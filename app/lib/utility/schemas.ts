@@ -16,15 +16,21 @@ export const utilityClientSchema = z.object({
   meterIds: z.array(z.string().uuid()),
 });
 
-export const utilityMeterSchema = z.object({
-  id: z.string().uuid(),
-  number: z.string().trim().min(1).max(80),
-  type: meterTypeSchema,
-  verificationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  clientId: z.string().uuid().or(z.literal("")),
-  location: z.string().trim().max(200),
-  previousReading: z.number().min(0),
-});
+export const utilityMeterSchema = z
+  .object({
+    id: z.string().uuid(),
+    number: z.string().trim().min(1).max(80),
+    type: meterTypeSchema,
+    verificationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    clientId: z.string().uuid().or(z.literal("")),
+    location: z.string().trim().max(200),
+    previousReading: z.number().min(0),
+    baselineReading: z.number().min(0).optional(),
+  })
+  .transform((meter) => ({
+    ...meter,
+    baselineReading: meter.baselineReading ?? meter.previousReading,
+  }));
 
 export const syncClientMetersSchema = z.object({
   meterIds: z.array(z.string().uuid()),

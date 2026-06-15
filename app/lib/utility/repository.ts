@@ -28,6 +28,7 @@ type MeterRow = {
   client_id: string | null;
   location: string;
   previous_reading: number | string;
+  baseline_reading?: number | string | null;
 };
 
 type ContactSettingsRow = {
@@ -43,6 +44,51 @@ type SubmissionRow = {
   submitted_at: string;
   readings: Record<string, number> | string;
 };
+
+const METER_COLUMNS_BASE =
+  "id, number, type, verification_date, client_id, location, previous_reading";
+const METER_COLUMNS_WITH_BASELINE = `${METER_COLUMNS_BASE}, baseline_reading`;
+
+let meterBaselineColumnAvailable: boolean | null = null;
+
+function isMissingBaselineColumnError(message: string | undefined): boolean {
+  if (!message) {
+    return false;
+  }
+
+  return message.includes("baseline_reading") && message.includes("does not exist");
+}
+
+type MeterQueryResult = {
+  data: unknown;
+  error: { message: string } | null;
+};
+
+async function queryMeterRows(
+  supabase: ReturnType<typeof createAdminClient>,
+  runQuery: (columns: string) => Promise<MeterQueryResult>,
+): Promise<MeterRow[]> {
+  if (meterBaselineColumnAvailable !== false) {
+    const withBaseline = await runQuery(METER_COLUMNS_WITH_BASELINE);
+    if (!withBaseline.error) {
+      meterBaselineColumnAvailable = true;
+      return (withBaseline.data ?? []) as MeterRow[];
+    }
+
+    if (isMissingBaselineColumnError(withBaseline.error.message)) {
+      meterBaselineColumnAvailable = false;
+    } else {
+      throw new Error(withBaseline.error.message);
+    }
+  }
+
+  const withoutBaseline = await runQuery(METER_COLUMNS_BASE);
+  if (withoutBaseline.error) {
+    throw new Error(withoutBaseline.error.message);
+  }
+
+  return (withoutBaseline.data ?? []) as MeterRow[];
+}
 
 function requireDb() {
   if (!isSupabaseAdminConfigured()) {
@@ -75,7 +121,31 @@ function mapMeter(row: MeterRow): UtilityMeter {
     clientId: row.client_id ?? "",
     location: row.location,
     previousReading: Number(row.previous_reading),
+    baselineReading: Number(row.baseline_reading ?? row.previous_reading),
   };
+}
+
+function enrichSubmissionsWithBaselines(
+  submissions: UtilitySubmission[],
+  meters: UtilityMeter[],
+): UtilitySubmission[] {
+  const meterById = new Map(meters.map((meter) => [meter.id, meter]));
+
+  return submissions.map((submission) => {
+    if (submission.previousReadings) {
+      return submission;
+    }
+
+    const previousReadings: Record<string, number> = {};
+    for (const meterId of Object.keys(submission.readings)) {
+      const meter = meterById.get(meterId);
+      if (meter) {
+        previousReadings[meterId] = meter.baselineReading;
+      }
+    }
+
+    return { ...submission, previousReadings };
+  });
 }
 
 function attachMeterIds(clients: ClientRow[], meters: UtilityMeter[]): UtilityClient[] {
@@ -87,22 +157,51 @@ function attachMeterIds(clients: ClientRow[], meters: UtilityMeter[]): UtilityCl
   }));
 }
 
+type StoredSubmissionReadings =
+  | Record<string, number>
+  | {
+      values: Record<string, number>;
+      previous?: Record<string, number>;
+    };
+
+function isWrappedSubmissionReadings(
+  raw: StoredSubmissionReadings,
+): raw is { values: Record<string, number>; previous?: Record<string, number> } {
+  return (
+    typeof raw === "object" &&
+    raw !== null &&
+    "values" in raw &&
+    typeof raw.values === "object" &&
+    raw.values !== null
+  );
+}
+
 function mapSubmission(row: SubmissionRow): UtilitySubmission {
-  const readings =
+  const raw =
     typeof row.readings === "string"
-      ? (JSON.parse(row.readings) as Record<string, number>)
+      ? (JSON.parse(row.readings) as StoredSubmissionReadings)
       : row.readings;
+
+  if (isWrappedSubmissionReadings(raw)) {
+    return {
+      clientId: row.client_id,
+      month: row.month,
+      submittedAt: row.submitted_at,
+      readings: raw.values,
+      previousReadings: raw.previous,
+    };
+  }
 
   return {
     clientId: row.client_id,
     month: row.month,
     submittedAt: row.submitted_at,
-    readings,
+    readings: raw as Record<string, number>,
   };
 }
 
 async function loadCoreData(supabase: ReturnType<typeof createAdminClient>) {
-  const [settingsResult, clientsResult, metersResult, submissionsResult] = await Promise.all([
+  const [settingsResult, clientsResult, submissionsResult] = await Promise.all([
     supabase
       .from("contact_settings")
       .select("email, sms_number, whatsapp_number, phone_number")
@@ -110,33 +209,30 @@ async function loadCoreData(supabase: ReturnType<typeof createAdminClient>) {
       .maybeSingle(),
     supabase.from("clients").select("id, client_number, address").order("client_number"),
     supabase
-      .from("meters")
-      .select("id, number, type, verification_date, client_id, location, previous_reading")
-      .order("number"),
-    supabase
       .from("readings_submissions")
       .select("client_id, month, submitted_at, readings")
       .order("submitted_at", { ascending: false }),
   ]);
 
-  if (
-    settingsResult.error ||
-    clientsResult.error ||
-    metersResult.error ||
-    submissionsResult.error
-  ) {
+  const meterRows = await queryMeterRows(supabase, async (columns) =>
+    supabase.from("meters").select(columns).order("number"),
+  );
+
+  if (settingsResult.error || clientsResult.error || submissionsResult.error) {
     throw new Error(
       settingsResult.error?.message ||
         clientsResult.error?.message ||
-        metersResult.error?.message ||
         submissionsResult.error?.message ||
         "Failed to load utility data",
     );
   }
 
-  const meters = (metersResult.data as MeterRow[]).map(mapMeter);
+  const meters = meterRows.map(mapMeter);
   const clients = attachMeterIds(clientsResult.data as ClientRow[], meters);
-  const submissions = (submissionsResult.data as SubmissionRow[]).map(mapSubmission);
+  const submissions = enrichSubmissionsWithBaselines(
+    (submissionsResult.data as SubmissionRow[]).map(mapSubmission),
+    meters,
+  );
 
   const settingsRow = settingsResult.data as ContactSettingsRow | null;
   if (!settingsRow) {
@@ -170,19 +266,18 @@ export async function lookupPublicClientInDb(query: string): Promise<PublicLooku
   requireDb();
   const supabase = createAdminClient();
 
-  const [clientsResult, metersResult] = await Promise.all([
+  const [clientsResult, meterRows] = await Promise.all([
     supabase.from("clients").select("id, client_number, address").order("client_number"),
-    supabase
-      .from("meters")
-      .select("id, number, type, verification_date, client_id, location, previous_reading")
-      .order("number"),
+    queryMeterRows(supabase, async (columns) =>
+      supabase.from("meters").select(columns).order("number"),
+    ),
   ]);
 
-  if (clientsResult.error || metersResult.error) {
-    throw new Error(clientsResult.error?.message || metersResult.error?.message || "Lookup failed");
+  if (clientsResult.error) {
+    throw new Error(clientsResult.error.message || "Lookup failed");
   }
 
-  const meters = (metersResult.data as MeterRow[]).map(mapMeter);
+  const meters = meterRows.map(mapMeter);
   const clients = attachMeterIds(clientsResult.data as ClientRow[], meters);
   const client = findClientByLookup(clients, query);
   if (!client) {
@@ -242,16 +337,11 @@ export async function validatePublicSubmissionInDb(
     return { ok: false, status: 404, message: "Klients nav atrasts." };
   }
 
-  const { data: meterRows, error: metersError } = await supabase
-    .from("meters")
-    .select("id, number, type, verification_date, client_id, location, previous_reading")
-    .eq("client_id", clientId);
+  const meterRows = await queryMeterRows(supabase, async (columns) =>
+    supabase.from("meters").select(columns).eq("client_id", clientId),
+  );
 
-  if (metersError) {
-    throw new Error(metersError.message);
-  }
-
-  const meters = (meterRows as MeterRow[]).map(mapMeter);
+  const meters = meterRows.map(mapMeter);
   if (meters.length === 0) {
     return { ok: false, status: 400, message: "Klientam nav piesaistītu skaitītāju." };
   }
@@ -343,6 +433,7 @@ export async function submitReadingsInDb(
   clientId: string,
   month: string,
   readings: Record<string, number>,
+  previousReadings: Record<string, number>,
 ): Promise<void> {
   const supabase = createAdminClient();
 
@@ -364,7 +455,10 @@ export async function submitReadingsInDb(
   const { error: insertError } = await supabase.from("readings_submissions").insert({
     client_id: clientId,
     month,
-    readings,
+    readings: {
+      values: readings,
+      previous: previousReadings,
+    },
   });
 
   if (insertError) {
@@ -421,7 +515,7 @@ export async function deleteClientById(clientId: string): Promise<void> {
 
 export async function upsertMeter(meter: UtilityMeter): Promise<UtilityMeter> {
   const supabase = createAdminClient();
-  const payload = {
+  const basePayload = {
     id: meter.id,
     number: meter.number.trim(),
     type: meter.type,
@@ -431,10 +525,32 @@ export async function upsertMeter(meter: UtilityMeter): Promise<UtilityMeter> {
     previous_reading: meter.previousReading,
   };
 
+  if (meterBaselineColumnAvailable !== false) {
+    const withBaseline = await supabase
+      .from("meters")
+      .upsert({ ...basePayload, baseline_reading: meter.baselineReading })
+      .select(METER_COLUMNS_WITH_BASELINE)
+      .single();
+
+    if (!withBaseline.error && withBaseline.data) {
+      meterBaselineColumnAvailable = true;
+      return mapMeter(withBaseline.data as MeterRow);
+    }
+
+    if (
+      withBaseline.error &&
+      !isMissingBaselineColumnError(withBaseline.error.message)
+    ) {
+      throw new Error(withBaseline.error.message || "Failed to save meter");
+    }
+
+    meterBaselineColumnAvailable = false;
+  }
+
   const { data, error } = await supabase
     .from("meters")
-    .upsert(payload)
-    .select("id, number, type, verification_date, client_id, location, previous_reading")
+    .upsert(basePayload)
+    .select(METER_COLUMNS_BASE)
     .single();
 
   if (error || !data) {

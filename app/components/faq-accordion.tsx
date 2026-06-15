@@ -26,7 +26,7 @@ export function FaqAccordion({
   const [openId, setOpenId] = useState<string | null>(items[0]?.id ?? null);
 
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
+    <section>
       <div>
         <h2 className="text-base font-semibold text-zinc-900">{title}</h2>
         {subtitle ? (
@@ -34,21 +34,24 @@ export function FaqAccordion({
         ) : null}
       </div>
 
-      <div className="mt-4 divide-y divide-zinc-200 rounded-lg border border-zinc-200">
+      <div className="mt-4 space-y-2">
         {items.map((item) => {
           const isOpen = openId === item.id;
           const panelId = `faq-panel-${item.id}`;
           const buttonId = `faq-button-${item.id}`;
 
           return (
-            <div key={item.id}>
+            <div
+              key={item.id}
+              className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm"
+            >
               <button
                 type="button"
                 id={buttonId}
                 aria-expanded={isOpen}
                 aria-controls={panelId}
                 onClick={() => setOpenId(isOpen ? null : item.id)}
-                className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-50"
+                className="flex w-full items-center justify-between gap-3 bg-white px-4 py-3.5 text-left text-sm font-medium text-zinc-900 transition-colors hover:bg-zinc-50"
               >
                 <span className="min-w-0 flex-1">{item.question}</span>
                 <IconChevronDown
@@ -60,7 +63,7 @@ export function FaqAccordion({
                   id={panelId}
                   role="region"
                   aria-labelledby={buttonId}
-                  className="border-t border-zinc-100 bg-zinc-50/80 px-4 py-3 text-sm leading-relaxed text-zinc-600"
+                  className="border-t border-zinc-200 bg-zinc-50 px-4 py-3 text-sm leading-relaxed text-zinc-600"
                 >
                   <p>{item.answer}</p>
                   {item.copyTemplate ? (

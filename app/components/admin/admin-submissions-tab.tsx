@@ -10,6 +10,7 @@ import {
 } from "@/app/components/ui/form-styles";
 import { IconAngleLeft, IconHome } from "@/app/components/ui/icons";
 import {
+  calculateConsumption,
   formatMonthLabel,
   formatMonthNameNominative,
   formatReading,
@@ -115,12 +116,14 @@ type SubmissionRow = {
   submission?: {
     submittedAt: string;
     readings: Record<string, number>;
+    previousReadings?: Record<string, number>;
   };
   meters: Array<{
     id: string;
     number: string;
     type: keyof typeof METER_TYPE_LABELS;
     previousReading: number;
+    baselineReading: number;
   }>;
 };
 
@@ -168,10 +171,12 @@ function SubmissionGroup({
                     <ul className="space-y-2">
                       {row.meters.map((meter) => {
                         const submittedReading = row.submission?.readings[meter.id];
+                        const baselineReading =
+                          row.submission?.previousReadings?.[meter.id] ?? meter.baselineReading;
                         const consumption =
-                          submittedReading === undefined
+                          submittedReading === undefined || baselineReading === undefined
                             ? null
-                            : submittedReading - meter.previousReading;
+                            : calculateConsumption(baselineReading, submittedReading);
 
                         return (
                           <li key={meter.id} className="text-xs">
@@ -183,7 +188,7 @@ function SubmissionGroup({
                               <>
                                 {" "}
                                 · rādījums {formatReading(submittedReading)} · patēriņš{" "}
-                                {formatReading(consumption ?? 0)} m³
+                                {consumption !== null ? `${formatReading(consumption)} m³` : "— m³"}
                               </>
                             ) : null}
                           </li>

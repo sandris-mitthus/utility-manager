@@ -84,7 +84,7 @@ export function AdminPanel({ admin }: AdminPanelProps) {
           <TooltipIconButton
             tooltip="Iziet"
             icon={<IconLogOut className="size-4" />}
-            variant="secondary"
+            variant="none"
             onClick={handleSignOut}
             disabled={signingOut}
           />

@@ -8,6 +8,7 @@ export type UtilityMeter = {
   clientId: string;
   location: string;
   previousReading: number;
+  baselineReading: number;
 };
 
 export type UtilityClient = {
@@ -22,6 +23,7 @@ export type UtilitySubmission = {
   month: string;
   submittedAt: string;
   readings: Record<string, number>;
+  previousReadings?: Record<string, number>;
 };
 
 export type PublicContactSettings = {

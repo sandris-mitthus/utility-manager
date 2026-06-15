@@ -248,6 +248,7 @@ export function createEmptyMeter(clientId = ""): UtilityMeter {
     clientId,
     location: "",
     previousReading: 0,
+    baselineReading: 0,
   };
 }
 

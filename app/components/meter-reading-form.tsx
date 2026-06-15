@@ -85,15 +85,19 @@ export function MeterReadingForm({
       <div className={`${cardClassName} text-center`}>
         <h2 className="text-lg font-semibold text-zinc-900">Rādījumi jau iesniegti</h2>
         <p className="mt-2 text-sm text-zinc-600">
-          Šī mēneša rādījumi klientam {client.clientNumber} jau ir saglabāti.
+          Šī mēneša rādījumi klientam{" "}
+          <span className="font-semibold text-zinc-900">Nr. {client.clientNumber}</span> jau ir
+          saglabāti.
         </p>
-        <TooltipIconButton
-          tooltip="Atgriezties pie klienta meklēšanas"
-          icon={<IconArrowLeft />}
+        <ActionButton
+          type="button"
           variant="primary"
           onClick={onBack}
+          icon={<IconArrowLeft />}
           className="mt-6"
-        />
+        >
+          Atpakaļ
+        </ActionButton>
       </div>
     );
   }
@@ -103,15 +107,19 @@ export function MeterReadingForm({
       <div className={`${cardClassName} text-center`}>
         <h2 className="text-lg font-semibold text-zinc-900">Rādījumi iesniegti</h2>
         <p className="mt-2 text-sm text-zinc-600">
-          Paldies! Rādījumi klientam {client.clientNumber} ir saglabāti.
+          Paldies! Rādījumi klientam{" "}
+          <span className="font-semibold text-zinc-900">Nr. {client.clientNumber}</span> ir
+          saglabāti.
         </p>
-        <TooltipIconButton
-          tooltip="Atgriezties pie klienta meklēšanas"
-          icon={<IconArrowLeft />}
+        <ActionButton
+          type="button"
           variant="primary"
           onClick={onBack}
+          icon={<IconArrowLeft />}
           className="mt-6"
-        />
+        >
+          Atpakaļ
+        </ActionButton>
       </div>
     );
   }
@@ -120,13 +128,15 @@ export function MeterReadingForm({
     return (
       <div className={cardClassName}>
         <p className="text-sm text-zinc-600">Klientam nav piesaistītu skaitītāju.</p>
-        <TooltipIconButton
-          tooltip="Atgriezties pie klienta meklēšanas"
-          icon={<IconArrowLeft />}
+        <ActionButton
+          type="button"
           variant="secondary"
           onClick={onBack}
+          icon={<IconArrowLeft />}
           className="mt-4"
-        />
+        >
+          Atpakaļ
+        </ActionButton>
       </div>
     );
   }
@@ -178,7 +188,7 @@ export function MeterReadingForm({
                     {meter.number} · {meter.location}
                   </p>
                   <p className="shrink-0 text-right text-xs text-zinc-500">
-                    Iepriekšējais rādījums:{" "}
+                    Skaitītāja rādījums uz skaitītāja:{" "}
                     <span className="font-medium text-zinc-900">
                       {formatReading(meter.previousReading)}
                     </span>
