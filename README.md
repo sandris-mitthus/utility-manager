@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.11` (see [Changelog](#changelog))
+**Current version:** `1.0.12` (see [Changelog](#changelog))
 
 ---
 
@@ -129,27 +129,24 @@ npm run db:test
 
 ## Vercel deployment
 
-### CI pirms deploy (ieteicams)
+### CI pirms production (Vercel Deployment Protection)
 
-Plūsma: **push uz `main`** → GitHub Actions (`ci.yml`) → `gitleaks` + `npm-audit` + `smoke` → `ci-passed` → **`deploy-vercel`**.
+Plūsma: **push uz `main`** → paralēli **GitHub Actions** (`gitleaks`, `npm-audit`, `smoke`, `ci-passed`) un **Vercel Git deploy** (build). Production publicēšana notiek tikai tad, kad Vercel **Deployment Protection** redz, ka obligātās GitHub pārbaudes ir zaļas.
 
-`vercel.json` atslēdz automātisko Git deploy uz `main`, lai production iet tikai caur GitHub pēc pārbaudēm.
+**Vienreizēja iestatīšana Vercel:**
 
-**Vienreizēja iestatīšana:**
-
-1. Vercel projektā saglabā ENV (Supabase u.c.) — tāpat kā agrāk
-2. Lokāli: `npx vercel link` → no `.vercel/project.json` paņem `orgId` un `projectId`
-3. GitHub repo → **Settings → Secrets and variables → Actions**:
-   - `VERCEL_TOKEN` — [Vercel Account → Tokens](https://vercel.com/account/tokens)
-   - `VERCEL_ORG_ID` — no `.vercel/project.json`
-   - `VERCEL_PROJECT_ID` — no `.vercel/project.json`
-4. GitHub repo → **Settings → Secrets and variables → Actions → Variables**:
-   - `VERCEL_DEPLOY_ENABLED` = `true` (tikai kad secrets ir iestatīti; citādi deploy job netiek palaists)
-5. (Opcija) GitHub → **Settings → Environments → production** — approval pirms deploy
+1. Projektā saglabā ENV (Supabase u.c.) — tāpat kā agrāk; Git integrācija uz `main` atstāta ieslēgta (nav `vercel.json`, kas to bloķē)
+2. **Settings → Git → Deployment Protection** (vai **Deployments → Protection Rules**)
+3. Ieslēdz aizsardzību production deployiem un pievieno **Required GitHub checks** (precīzi job nosaukumi no `ci.yml`):
+   - `gitleaks`
+   - `npm-audit`
+   - `smoke`
+   - (ieteicams) `ci-passed`
+4. Saglabā — nākamais push uz `main` rādīs Vercel deployment, bet production tiks publicēts pēc CI zaļajām pārbaudēm
 
 **Ja checks rāda „Queued” ilgi:** parasti GitHub runner rinda — pagaidi vai atcel run un mēģini vēlreiz. PR checks parasti startē ātrāk. Pārbaudi [githubstatus.com](https://www.githubstatus.com/) un **Settings → Actions → General** (Actions ieslēgti).
 
-**Alternatīva (bez GitHub deploy job):** Vercel → **Deployment Protection** → prasīt GitHub checks `gitleaks`, `npm-audit`, `smoke` — tad var atstāt Vercel auto-deploy ieslēgtu.
+**Alternatīva:** GitHub Actions `deploy-vercel` job + `VERCEL_*` secrets (v1.0.11) — nav nepieciešams, ja lieto Vercel Deployment Protection.
 
 ### Pirmreizēja setup
 
@@ -256,6 +253,10 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.12
+
+- **CI/CD** — A variants: noņemts `vercel.json` auto-deploy bloķējums un GitHub `deploy-vercel`; production caur Vercel Git + **Deployment Protection** (obligātie checks: `gitleaks`, `npm-audit`, `smoke`)
 
 ### v1.0.11
 
