@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.10` (see [Changelog](#changelog))
+**Current version:** `1.0.11` (see [Changelog](#changelog))
 
 ---
 
@@ -39,7 +39,7 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 - **CSP** response headers in `next.config.ts` (Supabase `connect-src`, Google fonts)
 - Safe OAuth redirect paths (`app/lib/security/safe-redirect-path.ts`)
 - **Pilns audits:** [`security-check.md`](security-check.md) — pašreizējā atzīme **8.5/10**
-- **CI (push):** `.github/workflows/secret-scan.yml` (gitleaks), `security-audit.yml` (npm audit), `security-smoke.yml` (typecheck, lint, build, auth guards, CSRF, RLS 008, public lookup)
+- **CI (push):** `.github/workflows/ci.yml` — gitleaks, npm audit, typecheck, lint, build, security smoke; **production deploy tikai pēc `ci-passed`**
 
 ---
 
@@ -128,6 +128,30 @@ npm run db:test
 ---
 
 ## Vercel deployment
+
+### CI pirms deploy (ieteicams)
+
+Plūsma: **push uz `main`** → GitHub Actions (`ci.yml`) → `gitleaks` + `npm-audit` + `smoke` → `ci-passed` → **`deploy-vercel`**.
+
+`vercel.json` atslēdz automātisko Git deploy uz `main`, lai production iet tikai caur GitHub pēc pārbaudēm.
+
+**Vienreizēja iestatīšana:**
+
+1. Vercel projektā saglabā ENV (Supabase u.c.) — tāpat kā agrāk
+2. Lokāli: `npx vercel link` → no `.vercel/project.json` paņem `orgId` un `projectId`
+3. GitHub repo → **Settings → Secrets and variables → Actions**:
+   - `VERCEL_TOKEN` — [Vercel Account → Tokens](https://vercel.com/account/tokens)
+   - `VERCEL_ORG_ID` — no `.vercel/project.json`
+   - `VERCEL_PROJECT_ID` — no `.vercel/project.json`
+4. GitHub repo → **Settings → Secrets and variables → Actions → Variables**:
+   - `VERCEL_DEPLOY_ENABLED` = `true` (tikai kad secrets ir iestatīti; citādi deploy job netiek palaists)
+5. (Opcija) GitHub → **Settings → Environments → production** — approval pirms deploy
+
+**Ja checks rāda „Queued” ilgi:** parasti GitHub runner rinda — pagaidi vai atcel run un mēģini vēlreiz. PR checks parasti startē ātrāk. Pārbaudi [githubstatus.com](https://www.githubstatus.com/) un **Settings → Actions → General** (Actions ieslēgti).
+
+**Alternatīva (bez GitHub deploy job):** Vercel → **Deployment Protection** → prasīt GitHub checks `gitleaks`, `npm-audit`, `smoke` — tad var atstāt Vercel auto-deploy ieslēgtu.
+
+### Pirmreizēja setup
 
 1. Push the repo to GitHub
 2. Import the project in [Vercel](https://vercel.com) (Framework Preset: **Next.js**)
@@ -232,6 +256,10 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.11
+
+- **CI/CD** — viens `ci.yml`: pārbaudes (`gitleaks`, `npm-audit`, `smoke`) → `ci-passed` → `deploy-vercel` tikai uz `main`; `vercel.json` atslēdz auto-deploy uz `main`
 
 ### v1.0.10
 

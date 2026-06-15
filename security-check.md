@@ -72,7 +72,7 @@
 | # | Statuss | Problēma | Risinājums |
 |---|---------|----------|------------|
 | L1–L7 | ✅ | googleapis, Dependabot, demo, OAuth, audit, seed, migrācijas | Ieviests |
-| L8 | ✅ | CI neassertē CSRF/RLS 008 | `security-smoke.yml` paplašināts |
+| L8 | ✅ | CI neassertē CSRF/RLS 008 | `ci.yml` smoke job |
 
 ---
 
@@ -113,4 +113,4 @@
 | Public lookup | `app/api/public/lookup/route.ts` |
 | SMTP | `app/lib/utility/contact-email.ts` |
 | Publiskā lapa | `app/(protected)/page.tsx` |
-| CI smoke | `.github/workflows/security-smoke.yml` |
+| CI | `.github/workflows/ci.yml` |
