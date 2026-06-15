@@ -2,7 +2,7 @@
 
 Next.js starter for utility management apps — Google OAuth, Supabase Postgres, and Vercel deployment. Based on the same stack and patterns as [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.1` (see [Changelog](#changelog))
+**Current version:** `1.0.2` (see [Changelog](#changelog))
 
 ---
 
@@ -17,8 +17,9 @@ Next.js starter for utility management apps — Google OAuth, Supabase Postgres,
 
 ### Starter UI
 
-- **Sākums** (`/`) — welcome page with Supabase / DB configuration status (public env, service role, `app_settings` row)
-- **App nav** — app name from `app_settings.app_name` (fallback: “Utility Manager”); single **Sākums** link, ready for more sections
+- **Sākums** (`/`) — klienta numura/adreses meklēšana, rādījumu ievade, FAQ (demo dati atmiņā)
+- **Administrācija** (`/admin`) — klienti, skaitītāji, iesniegtie rādījumi, kontaktu iestatījumi (demo UI, backend vēlāk)
+- **App nav** — app name from `app_settings.app_name` (fallback: “Utility Manager”)
 - **SectionPage** layout helper for new screens
 
 ### Data
@@ -143,24 +144,32 @@ Run `npm run db:migrate` from your machine against the production Supabase DB wh
 
 ```
 app/
-├── (protected)/        # Auth-gated routes
+├── (protected)/
 │   ├── layout.tsx      # Login gate or AppNav + children
-│   └── page.tsx        # Home / system status
+│   ├── page.tsx        # Client lookup, readings, FAQ
+│   └── admin/page.tsx  # Admin panel (demo data)
 ├── auth/
-│   ├── callback/       # OAuth code exchange
+│   ├── callback/
 │   └── auth-code-error/
-├── components/         # app-nav, login-gate, section-page, user-avatar
+├── components/
+│   ├── admin/          # clients, meters, submissions, settings tabs + modals
+│   ├── demo-data-provider.tsx
+│   ├── contract-lookup-panel.tsx, meter-reading-form.tsx, faq-accordion.tsx
+│   └── ui/             # confirm-close-dialog, tooltip-button, use-modal-keyboard
 └── lib/
-    ├── auth/           # getCurrentUser, signInWithGoogle, signOut, mapUserDisplay
-    ├── security/       # safe redirect paths
-    ├── settings/       # app_settings repository + types
-    └── supabase/       # clients, update-session, storage-key cookie cleanup
-proxy.ts                # Supabase session refresh (Next.js 16)
-next.config.ts          # CSP headers
+    ├── auth/
+    ├── demo/           # seed data, FAQ items, helpers
+    ├── format-date.ts
+    ├── security/
+    ├── settings/
+    └── supabase/
+proxy.ts
 scripts/                # db:migrate, db:test
 supabase/migrations/
-.cursor/rules/          # README bump, commits, db:migrate, Supabase security
+.cursor/rules/          # admin-demo-ui, README bump, GitHub commits, db:migrate, Supabase security
 ```
+
+Public repo: [github.com/sandris-mitthus/utility-manager](https://github.com/sandris-mitthus/utility-manager)
 
 ---
 
@@ -180,6 +189,7 @@ Short description of what shipped. v1.0.1
 
 Cursor rules:
 
+- `.cursor/rules/admin-demo-ui.mdc` — admin modāļi, pogas, tabulas, apstiprinājumi
 - `.cursor/rules/readme-version-update.mdc` — README update + version bump
 - `.cursor/rules/github-version-commit.mdc` — commit message format; run `typecheck` + `build` before commit/push
 - `.cursor/rules/db-migrate-after-sql.mdc` — run `npm run db:migrate` after new SQL
@@ -193,6 +203,13 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.2
+
+- **Sākums** — klienta meklēšana, rādījumu forma, FAQ (demo dati); FAQ accordion ikonas izmēra labojums
+- **Admin** (`/admin`) — klienti, skaitītāji, iesniegumi, iestatījumi; modāļi, dzēšanas/noņemšanas apstiprinājumi, kompakta skaitītāju tabula
+- **Supabase** — `.env.local` setup, `db:migrate` / `db:test`; publisks GitHub repozitorijs
+- **Cursor rules** — `admin-demo-ui`, README update un GitHub push workflow (LV)
 
 ### v1.0.1
 

@@ -1,41 +1,51 @@
 ---
-description: GitHub commit/push must use version-tagged messages matching package.json
+description: Kad lietotājs saka push GitHub — commit ar versijas numuru un īsu aprakstu
 alwaysApply: true
 ---
 
-# GitHub commits — version tag required
+# Push GitHub — commit ar versiju
 
-When the user asks to **commit**, **push**, **update GitHub**, or similar, every release commit must follow the project convention documented in `README.md` → **Versioning & commits**.
+Kad lietotājs prasa **push GitHub**, **commit**, **atjaunināt githubu** u.tml.:
 
-## Before commit
+## Pirms commit
 
-1. **Shippable work** (features, fixes, migrations, notable UI) → run **README update** first (`.cursor/rules/readme-version-update.mdc`; default patch +0.0.1):
-   - bump `package.json` `"version"`
-   - add `### vX.Y.Z` under `## Changelog`
-   - sync Features / Project structure if behavior changed
-2. Read the final version from `package.json` — that is the tag for the commit message.
-3. **Verify the code** — run before `git commit` (fix failures; do not commit broken releases):
+1. Ja ir **shippable** izmaiņas un versija vēl nav bumpota → vispirms **README update** (`.cursor/rules/readme-version-update.mdc`, patch +0.0.1).
+2. Versijas avots: **`package.json` `"version"`** — commit ziņojumā jābūt **tai pašai**.
+3. Pirms commit (release):
    ```bash
    npm run typecheck
    npm run build
    ```
-   - `typecheck` and `build` **must pass**.
-   - Run `npm run lint` too; fix **errors** (warnings alone are not a blocker unless the user asks for zero warnings).
-   - If a check fails, fix the issue and re-run — never push a release that does not build.
+   Kļūdas jālabo; necommitot salauztu release. `npm run lint` — labot errors.
 
-Skip README bump only when the user explicitly wants a typo/docs-only change **with no release**.
-
-## Commit message format (required)
+## Commit virsraksts (obligāts formāts)
 
 ```
-Short description of the change. vX.Y.Z
+Īss apraksts par versiju. vX.Y.Z
 ```
 
-- **One sentence** — what shipped and why it matters (not a file list).
-- **Must end** with `. vX.Y.Z` (period, space, `v`, semver from `package.json`).
-- Version in the message **must match** `package.json` and the newest README changelog section.
+- **Viena teikuma** kopsavilkums — *kas jauns / kāpēc*, ne failu saraksts
+- **Beigās obligāti** `. vX.Y.Z` (punkts, atstarpe, `v`, semver no `package.json`)
+- Versijai jāsakrīt ar README **Changelog** jaunāko `### vX.Y.Z`
+
+### Piemēri
+
+```
+Supabase setup, admin demo UI, and FAQ accordion fix. v1.0.2
+```
+
+```
+Fix FAQ chevron icon size in accordion. v1.0.3
+```
 
 ## Push
 
-- Include `README.md` and `package.json` in the same commit when they were bumped for this release.
-- Do not push unless the user explicitly asks.
+- `README.md` + `package.json` **tajā pašā commit**, ja bumpots release
+- **Nepushot**, ja lietotājs skaidri neprasa push
+- Pēc jaunām izmaiņām pirms push atkārtot `typecheck` + `build`
+
+## Ko nedarīt
+
+- Push bez `. vX.Y.Z` beigās
+- Commit versija ≠ `package.json` / Changelog
+- `--force` uz `main` bez skaidra lietotāja lūguma
