@@ -1,0 +1,80 @@
+---
+description: Admin demo UI — modāļi, pogas, tabulas, datumi, apstiprinājumi
+globs: app/components/admin/**,app/components/ui/confirm-close-dialog.tsx,app/components/ui/use-modal-keyboard.ts,app/components/ui/tooltip-button.tsx,app/lib/format-date.ts
+alwaysApply: true
+---
+
+# Admin demo UI konvencijas
+
+Attiecas uz **`app/components/admin/`** un saistītajiem UI helperiem. Jauni ekrāni seko **esošajam paternam**, neveido jaunu zaru.
+
+## Datumi
+
+- Lietotājam redzams formāts: **DD.MM.YYYY** caur `formatDateDisplay`, `isoToDisplayDate`, `sanitizeDisplayDateInput` (`app/lib/format-date.ts`).
+- DB/demo glabāšana: ISO `YYYY-MM-DD`.
+- ❌ `toLocaleDateString` / `toLocaleTimeString` admin plūsmā.
+
+## Pogas
+
+| Vieta | Stils |
+|-------|--------|
+| Galvene, formu pogas (Pievienot, Saglabāt, Atcelt) | Ikona + **teksts**, **bez** tooltip |
+| Tabulu darbības | Tikai ikona + tooltip (`TooltipIconButton`) |
+| Modāļa aizvērt (X) | Tikai ikona, tooltip „Aizvērt”, `tooltipPlacement="bottom"` |
+| Noņemt no saraksta modālī | `IconX`, tooltip „Noņemt”, `variant="danger"` |
+| Dzēst tabulā | `IconTrash`, tooltip „Dzēst …”, `variant="danger"` |
+
+## Modāļu struktūra
+
+- Galvene (`h3`, X) **ārpus** `overflow-y-auto`; saturs un kājas atsevišķi.
+- Hint/tooltip netiek apgriezti — neritināt galveni kopā ar saturu.
+
+## Modāļu tastatūra
+
+Visi admin formu modāļi lieto **`useModalKeyboard`** + **`ConfirmCloseDialog`**.
+
+- **ENTER** formā → `formRef.requestSubmit()` (hint laukos `preventDefault`, lai neiesniegtu).
+- **Klikšķis ārpus / ESC**: ja **`hasUnsavedChanges === false`** → aizver **bez** jautājuma; ja **true** → apstiprinājums.
+- **X** un **Atcelt** → aizver **uzreiz** (bez apstiprinājuma).
+- **`hasUnsavedChanges`**: salīdzināt ar modāļa atvēršanas stāvokli (lauki, piesaistītie ID, meklēšanas `query` ja nav tukšs).
+- **`blockKeyboard: true`**, kad atvērts ligzdošs apstiprinājums (noņemt skaitītāju, noņemt adresi u.tml.).
+
+**Apstiprinājuma dialogi** (`ConfirmCloseDialog`): dzēšana, noņemšana, aizvēršana ar nesaglabātām izmaiņām.
+
+- **ENTER** → apstiprina (`confirmLabel`, bieži „Dzēst” / „Noņemt” ar `confirmVariant="danger"`).
+- **ESC** → atceļ.
+- Tabulu dzēšanai obligāts modālis pirms `deleteClient` / `deleteMeter`.
+
+## Hinti / izvēle formās
+
+- Klienta, adreses, skaitītāja meklēšana: **teksta lauks + hint saraksts** (combobox), ne `<select>` kā primārais UX.
+- Adreses attēlojums: **adrese treknrakstā**, klienta numurs **zem** tās (atsevišķa rinda, bez `·` starp tiem).
+- Mēneša navigācijas/apakšvirsraksta tekstā **nelietot** centrēto punktu `·`.
+
+## Atsevišķi modāļi tabulās
+
+Nepārvietot tikai tabulas pogā esošo plūsmu pilnībā uz „Labot” modāli:
+
+| Tabula | Poga | Modālis | Saturs |
+|--------|------|---------|--------|
+| Skaitītāji | `IconMapPin` | `meter-address-modal.tsx` | Tikai adrese |
+| Klienti | `IconGauge` | `client-meters-modal.tsx` | Tikai skaitītāji |
+
+„Labot” modālis (`client-form-modal`, `meter-form-modal`) var saturēt vairāk; tabulā **atsevišķās pogas obligātas**.
+
+## Jauns skaitītājs
+
+- `createEmptyMeter()` **bez** noklusējuma `clientId`.
+- `meter-form-modal`: ja `!isExisting`, `selectedClientId` sākumā `null` — nerādīt „Izvēlētā adrese”, kamēr lietotājs neizvēlas.
+
+## Skaitītāju tabula (`admin-meters-tab`)
+
+Kolonnas: **Numurs**, **Klients**, **Darbības** (bez atsevišķām Veids / Vieta / Verifikācija).
+
+- **Numurs**: treknraksts; zem tā `text-sm text-zinc-500` — veids, tad verifikācijas datums.
+- **Klients**: adrese treknrakstā; zem tā numurs; zem numura — vieta (`text-sm text-zinc-500`).
+
+## Galvenie faili
+
+- Modāļi: `client-form-modal`, `client-meters-modal`, `meter-form-modal`, `meter-address-modal`
+- Kopīgie: `confirm-close-dialog.tsx`, `use-modal-keyboard.ts`, `tooltip-button.tsx`, `form-styles.ts`

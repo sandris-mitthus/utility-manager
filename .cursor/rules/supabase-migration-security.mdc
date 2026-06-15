@@ -1,0 +1,65 @@
+---
+description: Supabase migration security — RLS, policies, functions, storage buckets
+globs: supabase/migrations/**/*.sql
+alwaysApply: false
+---
+
+# Supabase migration security
+
+Every new migration must pass Supabase **Security Advisor**. Avoid trading one lint for another.
+
+## Lint traps (do not use)
+
+| Bad pattern | Lint error |
+|-------------|------------|
+| RLS on, no policy | `RLS Enabled No Policy` |
+| `using (true)` / `with check (true)` | `RLS Policy Always True` |
+| Broad `SELECT` on `storage.objects` | `Public Bucket Allows Listing` |
+| Function without `set search_path` | `Function Search Path Mutable` |
+| Public table without RLS | `RLS Disabled in Public` |
+
+## App tables (service-role server access)
+
+Utility Manager reads/writes Postgres **only via service role** on the server (`createAdminClient`). Browser clients must **not** access app tables through PostgREST until scoped policies are added.
+
+For each new `public` table:
+
+```sql
+alter table public.my_table enable row level security;
+
+drop policy if exists "my_table deny client access" on public.my_table;
+create policy "my_table deny client access"
+on public.my_table
+as restrictive
+for all
+to anon, authenticated
+using (false)
+with check (false);
+```
+
+- **Never** use `using (true)` / `with check (true)` — use deny-until-scoped policies instead.
+- When adding **client-side** Supabase queries later, replace deny with **scoped** policies (e.g. `auth.uid() = user_id`), not blanket `true`.
+
+## Internal tables
+
+`schema_migrations` and similar: same deny pattern for `anon`/`authenticated`.
+
+## Trigger / helper functions
+
+```sql
+create or replace function public.my_fn()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$ ... $$;
+```
+
+## Storage buckets
+
+- **No** bucket-wide `SELECT` on `storage.objects` (`using (bucket_id = '...')`).
+- Public buckets: direct file URLs work; listing stays blocked without broad SELECT policy.
+
+## After migration
+
+Run `npm run db:migrate` per `db-migrate-after-sql.mdc` — fix SQL and retry on failure.

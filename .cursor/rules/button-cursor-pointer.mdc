@@ -1,0 +1,20 @@
+---
+description: Visām pogām un klikšķināmiem elementiem cursor:pointer
+globs: app/**/*.{tsx,css}
+alwaysApply: true
+---
+
+# Pogas — cursor: pointer
+
+Visām **klikšķināmām pogām** jāparāda rokas kursors (`cursor: pointer`).
+
+## Vienots avots
+
+Bāzes stils ir **`app/globals.css`** — visi `<button>` un submit/reset inputi automātiski saņem `cursor: pointer`. Jaunām pogām **nav jāatkārto** `cursor-pointer`, ja vien nav īpaša izņēmuma.
+
+Atspējotām pogām: `cursor: not-allowed`.
+
+## Ko nedarīt
+
+- ❌ Poga bez rokas kursora (noklusējuma bulta)
+- ❌ `cursor-default` uz aktīvām pogām

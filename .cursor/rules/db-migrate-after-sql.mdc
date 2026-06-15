@@ -1,0 +1,41 @@
+---
+description: After SQL migration changes, run db:migrate; on failure fix SQL and retry until success
+globs: supabase/migrations/**/*.sql
+alwaysApply: false
+---
+
+# DB migrations — run, fix, retry
+
+When you **create or materially edit** a file in `supabase/migrations/`:
+
+## 1. Write the migration
+
+- Use the next sequential prefix (`001_`, `002_`, …).
+- Prefer idempotent SQL (`if not exists`, `on conflict do nothing`, `add column if not exists`).
+- Follow **`supabase-migration-security.mdc`** (RLS + policies, `search_path` on functions, safe storage policies).
+
+## 2. Run migrations (required)
+
+From project root — do not ask the user:
+
+```bash
+npm run db:migrate
+```
+
+`apply-migrations.mjs` tracks applied files in `public.schema_migrations` and runs only pending migrations. Failed runs are **not** recorded.
+
+## 3. On failure — fix and retry (required)
+
+If `npm run db:migrate` exits with an error:
+
+1. **Read the full error output** (relation exists, syntax, policy conflict, missing extension, etc.).
+2. **Fix the pending migration SQL** (or related script) — edit the file that failed, not a new duplicate migration unless the failed one was already recorded as applied.
+3. **Run `npm run db:migrate` again** immediately.
+4. **Repeat** until success or you hit a blocker you cannot fix without the user (missing env, wrong password, no network).
+
+Do **not** stop after the first failure with “please run migrate” when the error is fixable SQL/schema logic.
+
+## 4. Report to user
+
+- Success: list applied migration filenames, or `No pending migrations.`
+- After fix+retry: briefly note what was wrong and what you changed.

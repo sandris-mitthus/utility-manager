@@ -1,0 +1,32 @@
+---
+description: When the user says "README update", bump patch version and sync README.md changelog
+globs: README.md,package.json
+alwaysApply: false
+---
+
+# README update
+
+When the user asks for a **README update** (e.g. `README update`, `@README.md update`, `update readme`), run a **release notes pass** — not typo-only edits unless they say so.
+
+## Version bump (default: patch +0.0.1)
+
+| User says | Bump | Example |
+|-----------|------|---------|
+| `README update` (default) | **Patch** — last segment +1 | `1.0.0` → `1.0.1` |
+| Explicit **minor** / **0.1 step** / `v1.1.0` | **Minor** — middle segment +1, patch → 0 | `1.0.0` → `1.1.0` |
+| Explicit **major** | **Major** — first segment +1, rest → 0 | `1.0.0` → `2.0.0` |
+| Typo/docs only, **no release** | Skip bump | — |
+
+## Required steps (in order)
+
+1. **Last released version** — read `package.json` `"version"` and newest `### vX.Y.Z` under `## Changelog`.
+2. **Changes since that version** — `git log`, `git diff`, uncommitted work.
+3. **Bump** `package.json` per table above.
+4. **README header** — `**Current version:** \`X.Y.Z\``.
+5. **`## Changelog`** (newest first): move `### Unreleased` into new `### vX.Y.Z`; reset `### Unreleased` to `- (none)`.
+6. **Sync README body** if behavior changed.
+
+## When to skip the bump
+
+- User only wants spelling/grammar with **no release**
+- Nothing changed since the last `### vX.Y.Z` entry
