@@ -16,16 +16,16 @@ import { IconInput } from "@/app/components/ui/icon-input";
 import { IconGauge, IconLink, IconSave, IconX } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { useModalKeyboard } from "@/app/components/ui/use-modal-keyboard";
-import { METER_TYPE_LABELS, normalizeLookup } from "@/app/lib/demo/helpers";
+import { METER_TYPE_LABELS, normalizeLookup } from "@/app/lib/utility/helpers";
 import { runPendingAction } from "@/app/lib/run-pending-action";
-import type { DemoClient, DemoMeter } from "@/app/lib/demo/types";
+import type { UtilityClient, UtilityMeter } from "@/app/lib/utility/types";
 
 type ClientMetersModalProps = {
-  client: DemoClient;
+  client: UtilityClient;
   onClose: () => void;
 };
 
-function meterMatchesQuery(meter: DemoMeter, query: string): boolean {
+function meterMatchesQuery(meter: UtilityMeter, query: string): boolean {
   const normalized = normalizeLookup(query);
   if (!normalized) {
     return false;
@@ -42,7 +42,7 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
   const [attachedIds, setAttachedIds] = useState<string[]>(client.meterIds);
   const [query, setQuery] = useState("");
   const [hintsOpen, setHintsOpen] = useState(false);
-  const [meterToRemove, setMeterToRemove] = useState<DemoMeter | null>(null);
+  const [meterToRemove, setMeterToRemove] = useState<UtilityMeter | null>(null);
   const [feedback, setFeedback] = useState<{
     message: string;
     variant: FeedbackToastVariant;
@@ -74,7 +74,7 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
     () =>
       attachedIds
         .map((id) => state.meters.find((meter) => meter.id === id))
-        .filter((meter): meter is DemoMeter => Boolean(meter)),
+        .filter((meter): meter is UtilityMeter => Boolean(meter)),
     [attachedIds, state.meters],
   );
 

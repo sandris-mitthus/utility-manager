@@ -1,0 +1,186 @@
+name: Security smoke
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Lint check
+        run: npm run lint
+
+      - name: Build (production)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://placeholder.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-anon-key"
+          NEXT_PUBLIC_SITE_URL: "https://placeholder.example.com"
+
+      - name: Security - admin API routes have auth guards
+        run: |
+          echo "Checking that all /api/admin routes use requireAdminRead or requireAdminWrite..."
+          MISSING=0
+          for file in $(find app/api/admin -name "route.ts" 2>/dev/null); do
+            if grep -qE "export async function (GET|POST|PUT|DELETE|PATCH)" "$file"; then
+              if ! grep -qE "requireAdmin(Read|Write)" "$file"; then
+                echo "FAIL: Missing admin auth guard in $file"
+                MISSING=$((MISSING + 1))
+              fi
+            fi
+          done
+          if [ $MISSING -gt 0 ]; then
+            echo "$MISSING admin API route(s) missing auth guard"
+            exit 1
+          fi
+          echo "OK: All admin API routes use requireAdminRead/requireAdminWrite"
+
+      - name: Security - no demo seed in client bundle
+        run: |
+          echo "Checking demo artifacts are removed..."
+          if [ -d app/lib/demo ] || [ -f app/components/demo-data-provider.tsx ]; then
+            echo "FAIL: Demo module still present"
+            exit 1
+          fi
+          if grep -rq "DEMO_SEED\|demo-parole\|demo režīmā" app/ --include="*.ts" --include="*.tsx"; then
+            echo "FAIL: Demo references found in app code"
+            exit 1
+          fi
+          echo "OK: No demo artifacts in app"
+
+      - name: Security - headers configured
+        run: |
+          echo "Checking security headers in next.config.ts..."
+          for header in "X-Frame-Options" "X-Content-Type-Options" "Referrer-Policy" "Permissions-Policy" "frame-ancestors"; do
+            if ! grep -q "$header" next.config.ts; then
+              echo "FAIL: Missing security header or CSP directive: $header"
+              exit 1
+            fi
+          done
+          echo "OK: Security headers present"
+
+      - name: Security - service role not imported from client components
+        run: |
+          echo "Checking that createAdminClient is not used in client components..."
+          if grep -rl "createAdminClient" app/components --include="*.tsx" 2>/dev/null; then
+            echo "FAIL: createAdminClient imported in client components"
+            exit 1
+          fi
+          echo "OK: No createAdminClient in app/components"
+
+      - name: Security - no hardcoded secrets
+        run: |
+          echo "Checking for hardcoded secrets..."
+          PATTERNS=(
+            "sk_live_"
+            "sk_test_"
+            "SUPABASE_SERVICE_ROLE_KEY\s*=\s*\"ey"
+            "service_role[\"']?\s*:\s*[\"']ey"
+          )
+          FOUND=0
+          for pattern in "${PATTERNS[@]}"; do
+            if grep -rE "$pattern" app/ scripts/ --include="*.ts" --include="*.tsx" --include="*.mjs" -l 2>/dev/null; then
+              echo "FAIL: Potential hardcoded secret pattern found: $pattern"
+              FOUND=$((FOUND + 1))
+            fi
+          done
+          if [ $FOUND -gt 0 ]; then
+            exit 1
+          fi
+          echo "OK: No hardcoded secrets found"
+
+      - name: Security - no eval() in production code
+        run: |
+          echo "Checking for unsafe eval() usage in app code..."
+          if grep -rn "\beval(" app/ --include="*.ts" --include="*.tsx" | grep -v "node_modules"; then
+            echo "FAIL: eval() found in application code"
+            exit 1
+          fi
+          echo "OK: No eval() in app code"
+
+      - name: Security - RLS deny policies in migrations
+        run: |
+          echo "Checking core and 008 RLS deny policies in migrations..."
+          if ! grep -q "contact_settings deny client access" supabase/migrations/005_contact_settings_clients_meters.sql; then
+            echo "FAIL: Missing contact_settings deny policy in migration 005"
+            exit 1
+          fi
+          if ! grep -q "readings_submissions deny client access" supabase/migrations/008_submissions_audit_remove_email_password.sql; then
+            echo "FAIL: Missing readings_submissions deny policy in migration 008"
+            exit 1
+          fi
+          if ! grep -q "admin_audit_log deny client access" supabase/migrations/008_submissions_audit_remove_email_password.sql; then
+            echo "FAIL: Missing admin_audit_log deny policy in migration 008"
+            exit 1
+          fi
+          echo "OK: Core and 008 RLS deny policies present in migrations"
+
+      - name: Security - admin mutations use CSRF guard
+        run: |
+          echo "Checking requireAdminMutation in requireAdminWrite..."
+          if ! grep -q "requireAdminMutation" app/lib/auth/require-admin-mutation.ts; then
+            echo "FAIL: requireAdminWrite must call requireAdminMutation"
+            exit 1
+          fi
+          if ! grep -q "ADMIN_MUTATION_HEADER" app/lib/security/admin-api.ts; then
+            echo "FAIL: Missing ADMIN_MUTATION_HEADER definition"
+            exit 1
+          fi
+          echo "OK: CSRF guard present for admin writes"
+
+      - name: Security - admin mutation routes write audit log
+        run: |
+          echo "Checking writeAdminAuditLog on admin mutation routes..."
+          MISSING=0
+          for file in $(find app/api/admin -name "route.ts" 2>/dev/null); do
+            if grep -qE "export async function (POST|PUT|DELETE|PATCH)" "$file"; then
+              if ! grep -q "writeAdminAuditLog" "$file"; then
+                echo "FAIL: Missing writeAdminAuditLog in $file"
+                MISSING=$((MISSING + 1))
+              fi
+            fi
+          done
+          if [ $MISSING -gt 0 ]; then
+            exit 1
+          fi
+          echo "OK: Admin mutation routes write audit log"
+
+      - name: Security - public page does not bundle full client DB
+        run: |
+          echo "Checking public page uses contact settings only..."
+          if grep -q "loadPublicUtilityState" app/\(protected\)/page.tsx; then
+            echo "FAIL: Public page still loads full utility state"
+            exit 1
+          fi
+          if ! grep -q "loadPublicContactSettings" app/\(protected\)/page.tsx; then
+            echo "FAIL: Public page must load contact settings only"
+            exit 1
+          fi
+          if [ ! -f app/api/public/lookup/route.ts ]; then
+            echo "FAIL: Missing public lookup API route"
+            exit 1
+          fi
+          if ! grep -q "submissionToken" app/lib/utility/schemas.ts; then
+            echo "FAIL: Public submission schema must require submissionToken"
+            exit 1
+          fi
+          echo "OK: Public lookup API and scoped public page data"

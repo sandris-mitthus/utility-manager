@@ -1,16 +1,16 @@
 import { NextRequest } from "next/server";
-import { requireAdminApi } from "@/app/lib/auth/require-admin-api";
-import type { DemoContactSettings } from "@/app/lib/demo/types";
-import { updateContactSettings } from "@/app/lib/utility/repository";
+import { requireAdminRead, requireAdminWrite } from "@/app/lib/auth/require-admin-mutation";
+import { writeAdminAuditLog } from "@/app/lib/security/audit-log";
+import { contactSettingsSchema } from "@/app/lib/utility/schemas";
+import { loadUtilityAdminState, updateContactSettings } from "@/app/lib/utility/repository";
 
-export async function GET() {
-  const auth = await requireAdminApi();
+export async function GET(request: NextRequest) {
+  const auth = await requireAdminRead(request);
   if (!auth.ok) {
     return auth.response;
   }
 
   try {
-    const { loadUtilityAdminState } = await import("@/app/lib/utility/repository");
     const state = await loadUtilityAdminState();
     return Response.json({ success: true, data: state.settings });
   } catch (error) {
@@ -25,21 +25,20 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireAdminApi();
+  const auth = await requireAdminWrite(request);
   if (!auth.ok) {
     return auth.response;
   }
 
   try {
-    const body = (await request.json()) as DemoContactSettings;
-    const settings = await updateContactSettings({
-      email: body.email ?? "",
-      emailPassword: body.emailPassword ?? "",
-      smsNumber: body.smsNumber ?? "",
-      whatsappNumber: body.whatsappNumber ?? "",
-      phoneNumber: body.phoneNumber ?? "",
+    const body = contactSettingsSchema.parse(await request.json());
+    const settings = await updateContactSettings(body);
+    await writeAdminAuditLog({
+      adminEmail: auth.admin.email,
+      action: "update",
+      entityType: "contact_settings",
+      entityId: "1",
     });
-
     return Response.json({ success: true, data: settings });
   } catch (error) {
     return Response.json(
@@ -47,7 +46,7 @@ export async function PATCH(request: NextRequest) {
         success: false,
         message: error instanceof Error ? error.message : "Neizdevās saglabāt iestatījumus.",
       },
-      { status: 500 },
+      { status: 400 },
     );
   }
 }

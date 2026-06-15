@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.7` (see [Changelog](#changelog))
+**Current version:** `1.0.8` (see [Changelog](#changelog))
 
 ---
 
@@ -18,8 +18,8 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 
 ### Starter UI
 
-- **Sākums** (`/`) — klienta meklēšana, rādījumu ievade, FAQ; kontakti FAQ no `contact_settings` (DB); SMS/WhatsApp/e-pastam kopēšanas bloki; galvenās pogas ar ikonu + tekstu (`ActionButton`)
-- **Administrācija** (`/admin`) — klienti, skaitītāji, iesniegtie rādījumi, kontaktu iestatījumi (Supabase DB + API); tukšām tabulām ziņojums; iestatījumu „Saglabāt” labajā; modāļu kājas labajā, secība Atcelt → Noņemt → Saglabāt
+- **Sākums** (`/`) — klienta meklēšana (`GET /api/public/lookup`) un rādījumu iesniegšana ar signed token; FAQ kontakti bez paroles
+- **Administrācija** (`/admin`) — klienti, skaitītāji, iesniegtie rādījumi, kontaktu iestatījumi; CSRF + rate limit admin API
 - **App nav** — app name from `app_settings.app_name` (fallback: “Utility Manager”)
 - **SectionPage** layout helper for new screens
 
@@ -27,7 +27,8 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 
 - **Supabase** (Postgres) when env is configured
 - **`app_settings`** singleton (`id = 1`) — `app_name` for branding in nav and home subtitle
-- **`contact_settings`**, **`clients`**, **`meters`** — admin CRUD (migrācijas `005`, `006` ar demo seed)
+- **`readings_submissions`**, **`admin_audit_log`** — publiskie iesniegumi un admin audit (`008`)
+- **`contact_settings`**, **`clients`**, **`meters`** — admin CRUD (migrācijas `005`, `006` sākuma dati)
 - **`admin_users`** — administratoru e-pasta whitelist (`002`–`004`)
 - App tables use **service-role server access** with RLS deny policies for browser clients
 - `npm run db:migrate` applies only **pending** migrations (tracked in `public.schema_migrations`); pēc migrācijas automātiski pārlādē PostgREST kešu
@@ -36,6 +37,8 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 
 - **CSP** response headers in `next.config.ts` (Supabase `connect-src`, Google fonts)
 - Safe OAuth redirect paths (`app/lib/security/safe-redirect-path.ts`)
+- **Pilns audits:** [`security-check.md`](security-check.md) — pašreizējā atzīme **8.5/10**
+- **CI (push):** `.github/workflows/secret-scan.yml` (gitleaks), `security-audit.yml` (npm audit), `security-smoke.yml` (typecheck, lint, build, auth guards, CSRF, RLS 008, public lookup)
 
 ---
 
@@ -94,6 +97,10 @@ Copy `.env.example` → `.env.local` and fill in **real** values locally. Never 
 | `SUPABASE_DB_REGION` | Migrations | Pooler region (default `eu-west-1`) if direct `db.*` host fails |
 | `ADMIN_SEED_EMAIL` | Admin seed | `npm run db:seed-admin` |
 | `ADMIN_SEED_PASSWORD` | Admin seed | `npm run db:seed-admin` |
+| `CONTACT_SMTP_HOST` | SMTP | Server only; paziņojums pēc web iesniegšanas |
+| `CONTACT_SMTP_PORT` | SMTP | Noklus. `587` |
+| `CONTACT_SMTP_USER` | SMTP | Noklus. kontaktu e-pasts |
+| `CONTACT_EMAIL_PASSWORD` | SMTP | Server only; SMTP parole |
 
 ### Supabase setup
 
@@ -113,7 +120,9 @@ npm run db:test
    - Redirect: `http://localhost:3001/auth/callback` (ja izmanto OAuth callback)
 6. Atveriet `/` (publisks) vai `/admin` (admin login)
 
-**Schema:** `supabase/migrations/` — `001`–`007` (`app_settings`, `admin_users`, `contact_settings`, `clients`, `meters` + demo seed); `schema_migrations` (auto-managed by migrate script)
+**Service role:** glabājiet `SUPABASE_SERVICE_ROLE_KEY` tikai servera ENV (Vercel). Pēc iespējamā noplūdes incidenta — rotējiet atslēgu Supabase Dashboard → API un atjauniniet deploy ENV.
+
+**Schema:** `supabase/migrations/` — `001`–`008`; `schema_migrations` (auto-managed by migrate script)
 
 ---
 
@@ -154,29 +163,32 @@ Run `npm run db:migrate` from your machine against the production Supabase DB wh
 app/
 ├── (protected)/
 │   ├── layout.tsx           # Route shell (no global demo provider)
-│   ├── page.tsx             # Client lookup, FAQ contact_settings from DB; demo clients in memory
+│   ├── page.tsx             # Client lookup + readings from DB (PublicDataProvider)
 │   └── admin/
 │       ├── layout.tsx       # Admin auth gate + AdminDataProvider
 │       └── page.tsx         # AdminPanel
-├── api/admin/               # settings, clients, meters (require admin session)
+├── api/
+│   ├── admin/               # settings, clients, meters (auth + CSRF)
+│   └── public/submissions/  # publiskie rādījumi (rate limit)
 ├── auth/
 │   ├── callback/
 │   └── auth-code-error/
 ├── components/
 │   ├── admin/               # tabs, modals, admin-login-gate
 │   ├── admin-data-provider.tsx
-│   ├── demo-data-provider.tsx
+│   ├── public-data-provider.tsx
 │   ├── contract-lookup-panel.tsx, meter-reading-form.tsx, faq-accordion.tsx
 │   └── ui/                  # action-button, icon-input, table-empty-row, feedback-toast, …
 └── lib/
     ├── auth/
-    ├── demo/
-    ├── utility/             # loadContactSettings, loadUtilityAdminState
+    ├── security/            # rate-limit, admin-api CSRF, audit-log
+    ├── utility/             # types, repository, schemas, faq-items
     ├── format-date.ts
     ├── settings/
     └── supabase/
 proxy.ts
 scripts/                     # db:migrate, db:reload-schema, db:seed-admin, db:test
+security-check.md            # drošības audits, atzīme, ieteikumi, CI apraksts
 supabase/migrations/
 .cursor/rules/
 ```
@@ -217,6 +229,13 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.8
+
+- **Drošība** — viss `security-check.md` HIGH/MEDIUM/LOW (CSRF, zod, rate limit, headers, audit log, CI smoke); atzīme **8.5/10**
+- **Publiskā meklēšana** — `GET /api/public/lookup`; signed `submissionToken`; SMTP paziņojums pēc web iesniegšanas
+- **Demo noņemts** — publiskā `/` no DB; `readings_submissions`; `email_password` → ENV
+- **Migrācija `008`** — submissions, audit log, noņemta `email_password` kolonna
 
 ### v1.0.7
 

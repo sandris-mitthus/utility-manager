@@ -25,15 +25,15 @@ import {
 } from "@/app/components/ui/icons";
 import { TableEmptyRow } from "@/app/components/ui/table-empty-row";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
-import { METER_TYPE_LABELS } from "@/app/lib/demo/helpers";
+import { METER_TYPE_LABELS } from "@/app/lib/utility/helpers";
 import { formatDateDisplay } from "@/app/lib/format-date";
-import type { DemoMeter } from "@/app/lib/demo/types";
+import type { UtilityMeter } from "@/app/lib/utility/types";
 
 export function AdminMetersTab() {
   const { state, deleteMeter } = useAdminData();
-  const [draft, setDraft] = useState<DemoMeter | null>(null);
-  const [addressMeter, setAddressMeter] = useState<DemoMeter | null>(null);
-  const [meterToDelete, setMeterToDelete] = useState<DemoMeter | null>(null);
+  const [draft, setDraft] = useState<UtilityMeter | null>(null);
+  const [addressMeter, setAddressMeter] = useState<UtilityMeter | null>(null);
+  const [meterToDelete, setMeterToDelete] = useState<UtilityMeter | null>(null);
   const [feedback, setFeedback] = useState<{
     message: string;
     variant: FeedbackToastVariant;
@@ -43,7 +43,7 @@ export function AdminMetersTab() {
     setDraft(createEmptyMeter());
   }
 
-  function openEditForm(meter: DemoMeter) {
+  function openEditForm(meter: UtilityMeter) {
     setDraft({ ...meter });
   }
 

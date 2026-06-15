@@ -1,10 +1,14 @@
 import { NextRequest } from "next/server";
-import { requireAdminApi } from "@/app/lib/auth/require-admin-api";
-import type { DemoMeter } from "@/app/lib/demo/types";
+import { requireAdminRead, requireAdminWrite } from "@/app/lib/auth/require-admin-mutation";
+import { writeAdminAuditLog } from "@/app/lib/security/audit-log";
+import {
+  deleteIdQuerySchema,
+  utilityMeterSchema,
+} from "@/app/lib/utility/schemas";
 import { deleteMeterById, loadUtilityAdminState, upsertMeter } from "@/app/lib/utility/repository";
 
-export async function GET() {
-  const auth = await requireAdminApi();
+export async function GET(request: NextRequest) {
+  const auth = await requireAdminRead(request);
   if (!auth.ok) {
     return auth.response;
   }
@@ -24,15 +28,21 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi();
+  const auth = await requireAdminWrite(request);
   if (!auth.ok) {
     return auth.response;
   }
 
   try {
-    const body = (await request.json()) as DemoMeter;
+    const body = utilityMeterSchema.parse(await request.json());
     const saved = await upsertMeter(body);
     const state = await loadUtilityAdminState();
+    await writeAdminAuditLog({
+      adminEmail: auth.admin.email,
+      action: "upsert",
+      entityType: "meter",
+      entityId: saved.id,
+    });
     return Response.json({ success: true, data: saved, state });
   } catch (error) {
     return Response.json(
@@ -40,25 +50,34 @@ export async function POST(request: NextRequest) {
         success: false,
         message: error instanceof Error ? error.message : "Neizdevās saglabāt skaitītāju.",
       },
-      { status: 500 },
+      { status: 400 },
     );
   }
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdminApi();
+  const auth = await requireAdminWrite(request);
   if (!auth.ok) {
     return auth.response;
   }
 
-  const meterId = request.nextUrl.searchParams.get("id");
-  if (!meterId) {
-    return Response.json({ success: false, message: "Trūkst skaitītāja id." }, { status: 400 });
+  const parsed = deleteIdQuerySchema.safeParse({
+    id: request.nextUrl.searchParams.get("id"),
+  });
+
+  if (!parsed.success) {
+    return Response.json({ success: false, message: "Trūkst derīga skaitītāja id." }, { status: 400 });
   }
 
   try {
-    await deleteMeterById(meterId);
+    await deleteMeterById(parsed.data.id);
     const state = await loadUtilityAdminState();
+    await writeAdminAuditLog({
+      adminEmail: auth.admin.email,
+      action: "delete",
+      entityType: "meter",
+      entityId: parsed.data.id,
+    });
     return Response.json({ success: true, state });
   } catch (error) {
     return Response.json(

@@ -1,10 +1,11 @@
 import { NextRequest } from "next/server";
-import { requireAdminApi } from "@/app/lib/auth/require-admin-api";
-import type { DemoClient } from "@/app/lib/demo/types";
+import { requireAdminRead, requireAdminWrite } from "@/app/lib/auth/require-admin-mutation";
+import { writeAdminAuditLog } from "@/app/lib/security/audit-log";
+import { utilityClientSchema, deleteIdQuerySchema } from "@/app/lib/utility/schemas";
 import { deleteClientById, loadUtilityAdminState, upsertClient } from "@/app/lib/utility/repository";
 
-export async function GET() {
-  const auth = await requireAdminApi();
+export async function GET(request: NextRequest) {
+  const auth = await requireAdminRead(request);
   if (!auth.ok) {
     return auth.response;
   }
@@ -24,15 +25,21 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi();
+  const auth = await requireAdminWrite(request);
   if (!auth.ok) {
     return auth.response;
   }
 
   try {
-    const body = (await request.json()) as DemoClient;
+    const body = utilityClientSchema.parse(await request.json());
     const saved = await upsertClient(body);
     const state = await loadUtilityAdminState();
+    await writeAdminAuditLog({
+      adminEmail: auth.admin.email,
+      action: "upsert",
+      entityType: "client",
+      entityId: saved.id,
+    });
     return Response.json({ success: true, data: saved, state });
   } catch (error) {
     return Response.json(
@@ -40,25 +47,34 @@ export async function POST(request: NextRequest) {
         success: false,
         message: error instanceof Error ? error.message : "Neizdevās saglabāt klientu.",
       },
-      { status: 500 },
+      { status: 400 },
     );
   }
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdminApi();
+  const auth = await requireAdminWrite(request);
   if (!auth.ok) {
     return auth.response;
   }
 
-  const clientId = request.nextUrl.searchParams.get("id");
-  if (!clientId) {
-    return Response.json({ success: false, message: "Trūkst klienta id." }, { status: 400 });
+  const parsed = deleteIdQuerySchema.safeParse({
+    id: request.nextUrl.searchParams.get("id"),
+  });
+
+  if (!parsed.success) {
+    return Response.json({ success: false, message: "Trūkst derīga klienta id." }, { status: 400 });
   }
 
   try {
-    await deleteClientById(clientId);
+    await deleteClientById(parsed.data.id);
     const state = await loadUtilityAdminState();
+    await writeAdminAuditLog({
+      adminEmail: auth.admin.email,
+      action: "delete",
+      entityType: "client",
+      entityId: parsed.data.id,
+    });
     return Response.json({ success: true, state });
   } catch (error) {
     return Response.json(

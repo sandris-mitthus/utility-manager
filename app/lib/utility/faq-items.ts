@@ -1,19 +1,16 @@
 import type { FaqItem } from "@/app/components/faq-accordion";
-import type { DemoContactSettings } from "@/app/lib/demo/types";
+import type { PublicContactSettings } from "@/app/lib/utility/types";
 
 export const READING_SUBMISSION_TEMPLATE = `Klienta numurs: KLIENTA NUMURS
 Aukstais ūdens: AUKSTA ŪDENS RĀDĪJUMI
 Karstais ūdens: KARSTA ŪDENS RĀDĪJUMI
 Kanalizācija: KANALIZĀCIJAS RĀDĪJUMI`;
 
-/** @deprecated use READING_SUBMISSION_TEMPLATE */
-export const EMAIL_READING_TEMPLATE = READING_SUBMISSION_TEMPLATE;
-
 function trimmed(value: string) {
   return value.trim();
 }
 
-export function buildFaqItems(settings: DemoContactSettings): FaqItem[] {
+export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
   const phoneNumber = trimmed(settings.phoneNumber);
   const smsNumber = trimmed(settings.smsNumber);
   const whatsappNumber = trimmed(settings.whatsappNumber);
@@ -23,8 +20,7 @@ export function buildFaqItems(settings: DemoContactSettings): FaqItem[] {
     {
       id: "where-client-number",
       question: "Kur atrodams klienta numurs?",
-      answer:
-        "Klienta numurs parasti ir norādīts rēķinā augšējā labajā stūrī vai klientu portāla profilā.",
+      answer: "Klienta numurs parasti ir norādīts rēķinā.",
     },
     {
       id: "use-address",
@@ -36,7 +32,7 @@ export function buildFaqItems(settings: DemoContactSettings): FaqItem[] {
       id: "phone-call",
       question: "Uz kādu numuru jāzvana, lai iesniegtu rādījumus?",
       answer: phoneNumber
-        ? `Zvaniet uz ${phoneNumber}. Darba laikā operatori pieņems rādījumus pa tālruni.`
+        ? `Zvaniet uz ${phoneNumber}. Operatori pieņems rādījumus pa tālruni.`
         : "Tālruņa numurs vēl nav norādīts. Sazinieties ar administratoru.",
     },
     {

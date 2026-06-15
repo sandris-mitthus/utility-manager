@@ -1,17 +1,17 @@
 ---
-description: Admin demo UI — modāļi, pogas, tabulas, datumi, apstiprinājumi
+description: Admin UI — modāļi, pogas, tabulas, datumi, apstiprinājumi
 globs: app/components/admin/**,app/components/ui/confirm-close-dialog.tsx,app/components/ui/use-modal-keyboard.ts,app/components/ui/tooltip-button.tsx,app/components/ui/icon-input.tsx,app/lib/format-date.ts
 alwaysApply: true
 ---
 
-# Admin demo UI konvencijas
+# Admin UI konvencijas
 
 Attiecas uz **`app/components/admin/`** un saistītajiem UI helperiem. Jauni ekrāni seko **esošajam paternam**, neveido jaunu zaru.
 
 ## Datumi
 
 - Lietotājam redzams formāts: **DD.MM.YYYY** caur `formatDateDisplay`, `isoToDisplayDate`, `sanitizeDisplayDateInput` (`app/lib/format-date.ts`).
-- DB/demo glabāšana: ISO `YYYY-MM-DD`.
+- DB glabāšana: ISO `YYYY-MM-DD`.
 - ❌ `toLocaleDateString` / `toLocaleTimeString` admin plūsmā.
 
 ## Pogas

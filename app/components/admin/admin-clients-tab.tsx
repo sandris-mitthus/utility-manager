@@ -25,13 +25,13 @@ import {
 } from "@/app/components/ui/icons";
 import { TableEmptyRow } from "@/app/components/ui/table-empty-row";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
-import type { DemoClient } from "@/app/lib/demo/types";
+import type { UtilityClient } from "@/app/lib/utility/types";
 
 export function AdminClientsTab() {
   const { state, deleteClient } = useAdminData();
-  const [draft, setDraft] = useState<DemoClient | null>(null);
-  const [metersClient, setMetersClient] = useState<DemoClient | null>(null);
-  const [clientToDelete, setClientToDelete] = useState<DemoClient | null>(null);
+  const [draft, setDraft] = useState<UtilityClient | null>(null);
+  const [metersClient, setMetersClient] = useState<UtilityClient | null>(null);
+  const [clientToDelete, setClientToDelete] = useState<UtilityClient | null>(null);
   const [feedback, setFeedback] = useState<{
     message: string;
     variant: FeedbackToastVariant;
@@ -41,7 +41,7 @@ export function AdminClientsTab() {
     setDraft(createEmptyClient());
   }
 
-  function openEditForm(client: DemoClient) {
+  function openEditForm(client: UtilityClient) {
     setDraft({ ...client });
   }
 

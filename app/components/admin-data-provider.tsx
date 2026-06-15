@@ -12,21 +12,24 @@ import {
   findClientByLookup,
   getClientMeters,
   hasSubmissionForMonth,
-} from "@/app/lib/demo/helpers";
+} from "@/app/lib/utility/helpers";
+import { adminMutationHeaders } from "@/app/lib/security/admin-api";
 import type {
-  DemoClient,
-  DemoContactSettings,
-  DemoDataState,
-  DemoMeter,
-} from "@/app/lib/demo/types";
+  AdminContactSettings,
+  UtilityClient,
+  UtilityMeter,
+  UtilityState,
+} from "@/app/lib/utility/types";
 import { todayIsoDate } from "@/app/lib/format-date";
 
 type AdminDataContextValue = {
-  state: DemoDataState;
-  updateSettings: (settings: DemoContactSettings) => Promise<{ ok: true } | { ok: false; message: string }>;
-  saveClient: (client: DemoClient) => Promise<{ ok: true } | { ok: false; message: string }>;
+  state: UtilityState;
+  updateSettings: (
+    settings: AdminContactSettings,
+  ) => Promise<{ ok: true } | { ok: false; message: string }>;
+  saveClient: (client: UtilityClient) => Promise<{ ok: true } | { ok: false; message: string }>;
   deleteClient: (clientId: string) => Promise<{ ok: true } | { ok: false; message: string }>;
-  saveMeter: (meter: DemoMeter) => Promise<{ ok: true } | { ok: false; message: string }>;
+  saveMeter: (meter: UtilityMeter) => Promise<{ ok: true } | { ok: false; message: string }>;
   deleteMeter: (meterId: string) => Promise<{ ok: true } | { ok: false; message: string }>;
   syncClientMeters: (
     clientId: string,
@@ -43,17 +46,17 @@ const AdminDataContext = createContext<AdminDataContextValue | null>(null);
 
 type AdminDataProviderProps = {
   children: ReactNode;
-  initialState: DemoDataState;
+  initialState: UtilityState;
 };
 
 async function readApiState(response: Response): Promise<
-  { ok: true; state: DemoDataState } | { ok: false; message: string }
+  { ok: true; state: UtilityState } | { ok: false; message: string }
 > {
   const json = (await response.json()) as {
     success?: boolean;
     message?: string;
-    state?: DemoDataState;
-    data?: DemoContactSettings;
+    state?: UtilityState;
+    data?: AdminContactSettings;
   };
 
   if (!response.ok || !json.success) {
@@ -68,18 +71,23 @@ async function readApiState(response: Response): Promise<
 }
 
 export function AdminDataProvider({ children, initialState }: AdminDataProviderProps) {
-  const [state, setState] = useState<DemoDataState>(initialState);
+  const [state, setState] = useState<UtilityState>(initialState);
 
   const hasSubmission = useCallback(
     (clientId: string, month: string) => hasSubmissionForMonth(state, clientId, month),
     [state],
   );
 
-  const updateSettings = useCallback(async (settings: DemoContactSettings) => {
+  const updateSettings = useCallback(async (settings: AdminContactSettings) => {
     const response = await fetch("/api/admin/settings", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(settings),
+      headers: adminMutationHeaders(),
+      body: JSON.stringify({
+        email: settings.email,
+        smsNumber: settings.smsNumber,
+        whatsappNumber: settings.whatsappNumber,
+        phoneNumber: settings.phoneNumber,
+      }),
     });
 
     if (!response.ok) {
@@ -87,15 +95,15 @@ export function AdminDataProvider({ children, initialState }: AdminDataProviderP
       return { ok: false as const, message: json.message || "Neizdevās saglabāt iestatījumus." };
     }
 
-    const json = (await response.json()) as { success: boolean; data: DemoContactSettings };
+    const json = (await response.json()) as { success: boolean; data: AdminContactSettings };
     setState((current) => ({ ...current, settings: json.data }));
     return { ok: true as const };
   }, []);
 
-  const saveClient = useCallback(async (client: DemoClient) => {
+  const saveClient = useCallback(async (client: UtilityClient) => {
     const response = await fetch("/api/admin/clients", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: adminMutationHeaders(),
       body: JSON.stringify(client),
     });
 
@@ -111,6 +119,7 @@ export function AdminDataProvider({ children, initialState }: AdminDataProviderP
   const deleteClient = useCallback(async (clientId: string) => {
     const response = await fetch(`/api/admin/clients?id=${encodeURIComponent(clientId)}`, {
       method: "DELETE",
+      headers: adminMutationHeaders(),
     });
 
     const result = await readApiState(response);
@@ -122,10 +131,10 @@ export function AdminDataProvider({ children, initialState }: AdminDataProviderP
     return { ok: true as const };
   }, []);
 
-  const saveMeter = useCallback(async (meter: DemoMeter) => {
+  const saveMeter = useCallback(async (meter: UtilityMeter) => {
     const response = await fetch("/api/admin/meters", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: adminMutationHeaders(),
       body: JSON.stringify(meter),
     });
 
@@ -141,6 +150,7 @@ export function AdminDataProvider({ children, initialState }: AdminDataProviderP
   const deleteMeter = useCallback(async (meterId: string) => {
     const response = await fetch(`/api/admin/meters?id=${encodeURIComponent(meterId)}`, {
       method: "DELETE",
+      headers: adminMutationHeaders(),
     });
 
     const result = await readApiState(response);
@@ -155,7 +165,7 @@ export function AdminDataProvider({ children, initialState }: AdminDataProviderP
   const syncClientMeters = useCallback(async (clientId: string, meterIds: string[]) => {
     const response = await fetch(`/api/admin/clients/${clientId}/meters`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: adminMutationHeaders(),
       body: JSON.stringify({ meterIds }),
     });
 
@@ -171,7 +181,7 @@ export function AdminDataProvider({ children, initialState }: AdminDataProviderP
   const attachMeterToAddress = useCallback(async (meterId: string, clientId: string | null) => {
     const response = await fetch(`/api/admin/meters/${meterId}/client`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: adminMutationHeaders(),
       body: JSON.stringify({ clientId }),
     });
 
@@ -220,7 +230,7 @@ export function useAdminData() {
   return context;
 }
 
-export function createEmptyClient(): DemoClient {
+export function createEmptyClient(): UtilityClient {
   return {
     id: crypto.randomUUID(),
     clientNumber: "",
@@ -229,7 +239,7 @@ export function createEmptyClient(): DemoClient {
   };
 }
 
-export function createEmptyMeter(clientId = ""): DemoMeter {
+export function createEmptyMeter(clientId = ""): UtilityMeter {
   return {
     id: crypto.randomUUID(),
     number: "",
@@ -241,10 +251,10 @@ export function createEmptyMeter(clientId = ""): DemoMeter {
   };
 }
 
-export function findAdminClient(state: DemoDataState, query: string) {
+export function findAdminClient(state: UtilityState, query: string) {
   return findClientByLookup(state.clients, query);
 }
 
-export function getAdminClientMeters(state: DemoDataState, clientId: string) {
+export function getAdminClientMeters(state: UtilityState, clientId: string) {
   return getClientMeters(state, clientId);
 }

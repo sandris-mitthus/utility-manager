@@ -16,7 +16,7 @@ import {
   getCurrentMonthKey,
   shiftMonthKey,
   METER_TYPE_LABELS,
-} from "@/app/lib/demo/helpers";
+} from "@/app/lib/utility/helpers";
 import { formatDateTimeDisplay } from "@/app/lib/format-date";
 
 export function AdminSubmissionsTab() {

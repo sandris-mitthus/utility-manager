@@ -46,7 +46,15 @@ const serviceClient = createClient(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-for (const table of ["app_settings", "schema_migrations", "contact_settings", "clients", "meters"]) {
+for (const table of [
+  "app_settings",
+  "schema_migrations",
+  "contact_settings",
+  "clients",
+  "meters",
+  "readings_submissions",
+  "admin_audit_log",
+]) {
   const { error } = await serviceClient.from(table).select("*", { count: "exact", head: true });
   console.log(`TABLE ${table}:`, error ? error.message : "OK — exists");
 }

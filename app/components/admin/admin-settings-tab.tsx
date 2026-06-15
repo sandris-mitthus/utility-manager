@@ -11,7 +11,7 @@ import {
   cardClassName,
   labelClassName,
 } from "@/app/components/ui/form-styles";
-import { IconInput, PasswordInput } from "@/app/components/ui/icon-input";
+import { IconInput } from "@/app/components/ui/icon-input";
 import {
   IconChat,
   IconMail,
@@ -20,7 +20,7 @@ import {
   IconSave,
 } from "@/app/components/ui/icons";
 import { runPendingAction } from "@/app/lib/run-pending-action";
-import type { DemoContactSettings } from "@/app/lib/demo/types";
+import type { PublicContactSettings } from "@/app/lib/utility/types";
 
 type FeedbackState = {
   message: string;
@@ -29,7 +29,12 @@ type FeedbackState = {
 
 export function AdminSettingsTab() {
   const { state, updateSettings } = useAdminData();
-  const [draft, setDraft] = useState<DemoContactSettings>(state.settings);
+  const [draft, setDraft] = useState<PublicContactSettings>({
+    email: state.settings.email,
+    smsNumber: state.settings.smsNumber,
+    whatsappNumber: state.settings.whatsappNumber,
+    phoneNumber: state.settings.phoneNumber,
+  });
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [pendingAction, setPendingAction] = useState<"save" | null>(null);
 
@@ -37,11 +42,12 @@ export function AdminSettingsTab() {
     event.preventDefault();
     await runPendingAction("save", setPendingAction, async () => {
       const result = await updateSettings({
+        ...draft,
         email: draft.email.trim(),
-        emailPassword: draft.emailPassword,
         smsNumber: draft.smsNumber.trim(),
         whatsappNumber: draft.whatsappNumber.trim(),
         phoneNumber: draft.phoneNumber.trim(),
+        emailPasswordConfigured: state.settings.emailPasswordConfigured,
       });
 
       if (!result.ok) {
@@ -79,16 +85,12 @@ export function AdminSettingsTab() {
             />
           </div>
           <div>
-            <label htmlFor="settings-email-password" className={labelClassName}>
-              E-pasta parole
-            </label>
-            <PasswordInput
-              id="settings-email-password"
-              value={draft.emailPassword}
-              onChange={(event) => setDraft({ ...draft, emailPassword: event.target.value })}
-              placeholder="ievadiet paroli"
-              wrapperClassName="mt-1"
-            />
+            <p className={labelClassName}>E-pasta parole</p>
+            <p className="mt-1 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+              {state.settings.emailPasswordConfigured
+                ? "SMTP konfigurēts (CONTACT_SMTP_HOST + CONTACT_EMAIL_PASSWORD). Pēc web iesniegšanas tiek sūtīts paziņojuma e-pasts."
+                : "Nav konfigurēts. Pievienojiet CONTACT_SMTP_HOST, CONTACT_SMTP_USER (ja vajag) un CONTACT_EMAIL_PASSWORD servera vidē."}
+            </p>
           </div>
         </div>
 

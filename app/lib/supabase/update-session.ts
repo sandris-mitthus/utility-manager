@@ -1,5 +1,5 @@
+import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
 import { getSupabasePublicEnv } from "@/app/lib/supabase/env";
 import {
   getSupabaseStorageKey,
@@ -33,6 +33,7 @@ export async function updateSession(request: NextRequest) {
 
   const storageKey = getSupabaseStorageKey(env.url);
   let supabaseResponse = NextResponse.next({ request });
+  const { pathname } = request.nextUrl;
 
   const supabase = createServerClient(env.url, env.anonKey, {
     cookies: {
@@ -52,8 +53,18 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   purgeForeignSupabaseCookies(request, supabaseResponse, storageKey);
+
+  if (pathname.startsWith("/api/admin") && !user) {
+    return NextResponse.json(
+      { success: false, message: "Nepieciešama administratora pieslēgšanās." },
+      { status: 401 },
+    );
+  }
 
   return supabaseResponse;
 }

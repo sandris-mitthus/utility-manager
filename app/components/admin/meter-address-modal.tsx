@@ -21,16 +21,16 @@ import {
 } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { useModalKeyboard } from "@/app/components/ui/use-modal-keyboard";
-import { METER_TYPE_LABELS, normalizeLookup } from "@/app/lib/demo/helpers";
+import { METER_TYPE_LABELS, normalizeLookup } from "@/app/lib/utility/helpers";
 import { runPendingAction } from "@/app/lib/run-pending-action";
-import type { DemoClient, DemoMeter } from "@/app/lib/demo/types";
+import type { UtilityClient, UtilityMeter } from "@/app/lib/utility/types";
 
 type MeterAddressModalProps = {
-  meter: DemoMeter;
+  meter: UtilityMeter;
   onClose: () => void;
 };
 
-function clientMatchesQuery(client: DemoClient, query: string): boolean {
+function clientMatchesQuery(client: UtilityClient, query: string): boolean {
   const normalized = normalizeLookup(query);
   if (!normalized) {
     return false;
@@ -98,7 +98,7 @@ export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
 
-  function selectClient(client: DemoClient) {
+  function selectClient(client: UtilityClient) {
     setSelectedClientId(client.id);
     setQuery("");
     setHintsOpen(false);

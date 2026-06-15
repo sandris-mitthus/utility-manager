@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { FaqAccordion } from "@/app/components/faq-accordion";
-import { useDemoData } from "@/app/components/demo-data-provider";
+import { usePublicData } from "@/app/components/public-data-provider";
 import { MeterReadingForm } from "@/app/components/meter-reading-form";
 import { ActionButton } from "@/app/components/ui/action-button";
 import {
@@ -12,16 +12,16 @@ import {
 import { IconInput } from "@/app/components/ui/icon-input";
 import { IconArrowRight, IconMapPin } from "@/app/components/ui/icons";
 import { runPendingAction } from "@/app/lib/run-pending-action";
-import { buildFaqItems } from "@/app/lib/demo/faq-items";
-import type { DemoClient } from "@/app/lib/demo/types";
+import { buildFaqItems } from "@/app/lib/utility/faq-items";
+import type { PublicLookupResult } from "@/app/lib/utility/types";
 
 export function ContractLookupPanel() {
-  const { state, findClient, getMetersForClient } = useDemoData();
+  const { settings, lookupClient } = usePublicData();
   const [clientLookup, setClientLookup] = useState("");
-  const [selectedClient, setSelectedClient] = useState<DemoClient | null>(null);
+  const [lookupResult, setLookupResult] = useState<PublicLookupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const faqItems = useMemo(() => buildFaqItems(state.settings), [state.settings]);
+  const faqItems = useMemo(() => buildFaqItems(settings), [settings]);
 
   const [pendingAction, setPendingAction] = useState<"submit" | null>(null);
 
@@ -32,29 +32,31 @@ export function ContractLookupPanel() {
       const trimmed = clientLookup.trim();
       if (!trimmed) {
         setError("Ievadiet klienta numuru vai adresi.");
-        setSelectedClient(null);
+        setLookupResult(null);
         return;
       }
 
-      const client = findClient(trimmed);
-      if (!client) {
-        setError("Klients nav atrasts. Pārbaudiet numuru vai adresi.");
-        setSelectedClient(null);
+      const result = await lookupClient(trimmed);
+      if (!result.ok) {
+        setError(result.message);
+        setLookupResult(null);
         return;
       }
 
       setError(null);
-      setSelectedClient(client);
+      setLookupResult(result.data);
     });
   }
 
-  if (selectedClient) {
+  if (lookupResult) {
     return (
       <div className="mx-auto w-full max-w-xl">
         <MeterReadingForm
-          client={selectedClient}
-          meters={getMetersForClient(selectedClient.id)}
-          onBack={() => setSelectedClient(null)}
+          client={lookupResult.client}
+          meters={lookupResult.meters}
+          submissionToken={lookupResult.submissionToken}
+          hasSubmissionThisMonth={lookupResult.hasSubmissionThisMonth}
+          onBack={() => setLookupResult(null)}
         />
       </div>
     );

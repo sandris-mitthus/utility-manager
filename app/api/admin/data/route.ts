@@ -1,8 +1,9 @@
-import { requireAdminApi } from "@/app/lib/auth/require-admin-api";
+import { NextRequest } from "next/server";
+import { requireAdminRead } from "@/app/lib/auth/require-admin-mutation";
 import { loadUtilityAdminState } from "@/app/lib/utility/repository";
 
-export async function GET() {
-  const auth = await requireAdminApi();
+export async function GET(request: NextRequest) {
+  const auth = await requireAdminRead(request);
   if (!auth.ok) {
     return auth.response;
   }

@@ -1,4 +1,4 @@
-import type { DemoClient, DemoDataState, DemoMeter, MeterType } from "@/app/lib/demo/types";
+import type { UtilityClient, UtilityMeter, UtilityState, MeterType } from "@/app/lib/utility/types";
 
 export const METER_TYPE_LABELS: Record<MeterType, string> = {
   hot_water: "Karstais ūdens",
@@ -11,9 +11,9 @@ export function normalizeLookup(value: string): string {
 }
 
 export function findClientByLookup(
-  clients: DemoClient[],
+  clients: UtilityClient[],
   query: string,
-): DemoClient | null {
+): UtilityClient | null {
   const normalized = normalizeLookup(query);
   if (!normalized) {
     return null;
@@ -29,7 +29,7 @@ export function findClientByLookup(
   );
 }
 
-export function getClientMeters(state: DemoDataState, clientId: string): DemoMeter[] {
+export function getClientMeters(state: Pick<UtilityState, "meters">, clientId: string): UtilityMeter[] {
   return state.meters.filter((meter) => meter.clientId === clientId);
 }
 
@@ -37,11 +37,6 @@ export function getCurrentMonthKey(date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   return `${year}-${month}`;
-}
-
-export function getPreviousMonthKey(date = new Date()): string {
-  const previous = new Date(date.getFullYear(), date.getMonth() - 1, 1);
-  return getCurrentMonthKey(previous);
 }
 
 export function shiftMonthKey(monthKey: string, delta: number): string {
@@ -124,7 +119,7 @@ export function calculateConsumption(
 }
 
 export function hasSubmissionForMonth(
-  state: DemoDataState,
+  state: Pick<UtilityState, "submissions">,
   clientId: string,
   month: string,
 ): boolean {

@@ -55,20 +55,6 @@ if (lookupError) {
 
 let adminRow = existingRow;
 
-if (!adminRow) {
-  const { data: rows, error: listRowsError } = await supabase
-    .from("admin_users")
-    .select("id, email, auth_user_id")
-    .limit(5);
-
-  if (listRowsError) {
-    console.error("admin_users list failed:", listRowsError.message);
-    process.exit(1);
-  }
-
-  adminRow = rows?.[0] ?? null;
-}
-
 let authUserId = adminRow?.auth_user_id ?? null;
 
 const { data: listData, error: listError } = await supabase.auth.admin.listUsers({

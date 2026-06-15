@@ -1,16 +1,26 @@
 import { ContractLookupPanel } from "@/app/components/contract-lookup-panel";
-import { DemoDataProvider } from "@/app/components/demo-data-provider";
-import { DEMO_SEED } from "@/app/lib/demo/seed-data";
-import { loadContactSettings } from "@/app/lib/utility/repository";
+import { PublicDataProvider } from "@/app/components/public-data-provider";
+import { loadPublicContactSettings } from "@/app/lib/utility/repository";
+import { isSupabaseAdminConfigured } from "@/app/lib/supabase/env";
 
 export default async function HomePage() {
-  const settings = await loadContactSettings();
+  if (!isSupabaseAdminConfigured()) {
+    return (
+      <main className="page">
+        <div className="mx-auto max-w-xl rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+          Sistēma nav konfigurēta. Pievienojiet Supabase vides mainīgos `.env.local` failā.
+        </div>
+      </main>
+    );
+  }
+
+  const settings = await loadPublicContactSettings();
 
   return (
-    <DemoDataProvider initialState={{ ...DEMO_SEED, settings }}>
+    <PublicDataProvider initialSettings={{ settings }}>
       <main className="page">
         <ContractLookupPanel />
       </main>
-    </DemoDataProvider>
+    </PublicDataProvider>
   );
 }

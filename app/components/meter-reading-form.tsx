@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { useDemoData } from "@/app/components/demo-data-provider";
+import { usePublicData } from "@/app/components/public-data-provider";
 import { ActionButton } from "@/app/components/ui/action-button";
 import {
   cardClassName,
@@ -16,17 +16,25 @@ import {
   METER_TYPE_LABELS,
   parseReadingInput,
   sanitizeReadingInput,
-} from "@/app/lib/demo/helpers";
-import type { DemoClient, DemoMeter } from "@/app/lib/demo/types";
+} from "@/app/lib/utility/helpers";
+import type { UtilityClient, UtilityMeter } from "@/app/lib/utility/types";
 
 type MeterReadingFormProps = {
-  client: DemoClient;
-  meters: DemoMeter[];
+  client: UtilityClient;
+  meters: UtilityMeter[];
+  submissionToken: string;
+  hasSubmissionThisMonth: boolean;
   onBack: () => void;
 };
 
-export function MeterReadingForm({ client, meters, onBack }: MeterReadingFormProps) {
-  const { submitReadings } = useDemoData();
+export function MeterReadingForm({
+  client,
+  meters,
+  submissionToken,
+  hasSubmissionThisMonth,
+  onBack,
+}: MeterReadingFormProps) {
+  const { submitReadings } = usePublicData();
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -62,7 +70,7 @@ export function MeterReadingForm({ client, meters, onBack }: MeterReadingFormPro
         readings[meter.id] = parsed;
       }
 
-      const result = submitReadings(client.id, readings);
+      const result = await submitReadings(client.id, submissionToken, readings);
       if (!result.ok) {
         setError(result.message);
         return;
@@ -72,12 +80,30 @@ export function MeterReadingForm({ client, meters, onBack }: MeterReadingFormPro
     });
   }
 
+  if (hasSubmissionThisMonth) {
+    return (
+      <div className={`${cardClassName} text-center`}>
+        <h2 className="text-lg font-semibold text-zinc-900">Rādījumi jau iesniegti</h2>
+        <p className="mt-2 text-sm text-zinc-600">
+          Šī mēneša rādījumi klientam {client.clientNumber} jau ir saglabāti.
+        </p>
+        <TooltipIconButton
+          tooltip="Atgriezties pie klienta meklēšanas"
+          icon={<IconArrowLeft />}
+          variant="primary"
+          onClick={onBack}
+          className="mt-6"
+        />
+      </div>
+    );
+  }
+
   if (success) {
     return (
       <div className={`${cardClassName} text-center`}>
         <h2 className="text-lg font-semibold text-zinc-900">Rādījumi iesniegti</h2>
         <p className="mt-2 text-sm text-zinc-600">
-          Paldies! Rādījumi klientam {client.clientNumber} ir saglabāti demo režīmā.
+          Paldies! Rādījumi klientam {client.clientNumber} ir saglabāti.
         </p>
         <TooltipIconButton
           tooltip="Atgriezties pie klienta meklēšanas"
