@@ -85,6 +85,11 @@ async function markMigrationApplied(client, filename) {
   );
 }
 
+async function reloadPostgrestSchema(client) {
+  await client.query(`NOTIFY pgrst, 'reload schema'`);
+  console.log("PostgREST schema cache reloaded.");
+}
+
 async function getAppliedMigrations(client) {
   const { rows } = await client.query(
     `select filename from public.schema_migrations order by filename`,
@@ -153,6 +158,8 @@ try {
     await markMigrationApplied(client, file);
     console.log(`OK — ${file}`);
   }
+
+  await reloadPostgrestSchema(client);
 
   console.log(`Applied ${pending.length} migration(s).`);
 } catch (error) {

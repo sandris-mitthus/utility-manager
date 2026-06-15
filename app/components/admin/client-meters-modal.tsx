@@ -1,18 +1,23 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useDemoData } from "@/app/components/demo-data-provider";
+import { useAdminData } from "@/app/components/admin-data-provider";
 import { ConfirmCloseDialog } from "@/app/components/ui/confirm-close-dialog";
 import {
-  inputClassName,
+  FeedbackToast,
+  type FeedbackToastVariant,
+} from "@/app/components/ui/feedback-toast";
+import { ActionButton } from "@/app/components/ui/action-button";
+import {
   labelClassName,
-  primaryButtonClassName,
-  secondaryButtonClassName,
+  modalFooterClassName,
 } from "@/app/components/ui/form-styles";
-import { IconLink, IconSave, IconX } from "@/app/components/ui/icons";
+import { IconInput } from "@/app/components/ui/icon-input";
+import { IconGauge, IconLink, IconSave, IconX } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { useModalKeyboard } from "@/app/components/ui/use-modal-keyboard";
 import { METER_TYPE_LABELS, normalizeLookup } from "@/app/lib/demo/helpers";
+import { runPendingAction } from "@/app/lib/run-pending-action";
 import type { DemoClient, DemoMeter } from "@/app/lib/demo/types";
 
 type ClientMetersModalProps = {
@@ -33,11 +38,17 @@ function meterMatchesQuery(meter: DemoMeter, query: string): boolean {
 }
 
 export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
-  const { state, syncClientMeters } = useDemoData();
+  const { state, syncClientMeters } = useAdminData();
   const [attachedIds, setAttachedIds] = useState<string[]>(client.meterIds);
   const [query, setQuery] = useState("");
   const [hintsOpen, setHintsOpen] = useState(false);
   const [meterToRemove, setMeterToRemove] = useState<DemoMeter | null>(null);
+  const [feedback, setFeedback] = useState<{
+    message: string;
+    variant: FeedbackToastVariant;
+  } | null>(null);
+  const [pendingAction, setPendingAction] = useState<"cancel" | "save" | null>(null);
+  const isBusy = pendingAction !== null;
   const inputWrapRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -107,10 +118,17 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
     setMeterToRemove(null);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    syncClientMeters(client.id, attachedIds);
-    onClose();
+    await runPendingAction("save", setPendingAction, async () => {
+      const result = await syncClientMeters(client.id, attachedIds);
+      if (!result.ok) {
+        setFeedback({ message: result.message, variant: "error" });
+        return;
+      }
+
+      onClose();
+    });
   }
 
   return (
@@ -179,7 +197,7 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
               <label htmlFor="client-meters-query" className={labelClassName}>
                 Meklēt skaitītāju
               </label>
-              <input
+              <IconInput
                 id="client-meters-query"
                 type="text"
                 value={query}
@@ -199,7 +217,8 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
                     addMeter(hints[0].id);
                   }
                 }}
-                className={`${inputClassName} mt-1`}
+                icon={<IconGauge className="size-4" />}
+                wrapperClassName="mt-1"
               />
 
               {hintsOpen && query.trim() ? (
@@ -237,15 +256,26 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-wrap gap-2 border-t border-zinc-100 px-6 py-4">
-            <button type="submit" className={primaryButtonClassName}>
-              <IconSave />
-              Saglabāt
-            </button>
-            <button type="button" className={secondaryButtonClassName} onClick={onClose}>
-              <IconX />
+          <div className={modalFooterClassName}>
+            <ActionButton
+              type="button"
+              variant="secondary"
+              loading={pendingAction === "cancel"}
+              disabled={isBusy}
+              icon={<IconX />}
+              onClick={() => void runPendingAction("cancel", setPendingAction, onClose)}
+            >
               Atcelt
-            </button>
+            </ActionButton>
+            <ActionButton
+              type="submit"
+              variant="primary"
+              loading={pendingAction === "save"}
+              disabled={isBusy}
+              icon={<IconSave />}
+            >
+              Saglabāt
+            </ActionButton>
           </div>
         </form>
       </div>
@@ -262,6 +292,14 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
           confirmVariant="danger"
           onConfirm={confirmRemoveMeter}
           onCancel={() => setMeterToRemove(null)}
+        />
+      ) : null}
+
+      {feedback ? (
+        <FeedbackToast
+          message={feedback.message}
+          variant={feedback.variant}
+          onDismiss={() => setFeedback(null)}
         />
       ) : null}
     </div>

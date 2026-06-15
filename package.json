@@ -1,6 +1,6 @@
 {
   "name": "utility-manager",
-  "version": "1.0.2",
+  "version": "1.0.7",
   "private": true,
   "scripts": {
     "dev": "node --max-http-header-size=65536 ./node_modules/next/dist/bin/next dev -p 3001",
@@ -9,6 +9,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:migrate": "node scripts/apply-migrations.mjs",
+    "db:reload-schema": "node scripts/reload-postgrest-schema.mjs",
+    "db:seed-admin": "node scripts/seed-admin.mjs",
     "db:test": "node scripts/test-supabase.mjs"
   },
   "dependencies": {

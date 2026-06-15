@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useId } from "react";
-import {
-  dangerButtonClassName,
-  primaryButtonClassName,
-  secondaryButtonClassName,
-} from "@/app/components/ui/form-styles";
+import { useEffect, useId, useState } from "react";
+import { ActionButton } from "@/app/components/ui/action-button";
+import { confirmDialogFooterClassName } from "@/app/components/ui/form-styles";
+import { runPendingAction } from "@/app/lib/run-pending-action";
 
 type ConfirmCloseDialogProps = {
   title?: string;
@@ -13,8 +11,8 @@ type ConfirmCloseDialogProps = {
   confirmLabel?: string;
   cancelLabel?: string;
   confirmVariant?: "primary" | "danger";
-  onConfirm: () => void;
-  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+  onCancel: () => void | Promise<void>;
 };
 
 export function ConfirmCloseDialog({
@@ -27,15 +25,19 @@ export function ConfirmCloseDialog({
   onCancel,
 }: ConfirmCloseDialogProps) {
   const titleId = useId();
-  const confirmClassName =
-    confirmVariant === "danger" ? dangerButtonClassName : primaryButtonClassName;
+  const [pendingAction, setPendingAction] = useState<"cancel" | "confirm" | null>(null);
+  const isBusy = pendingAction !== null;
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (isBusy) {
+        return;
+      }
+
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        onCancel();
+        void runPendingAction("cancel", setPendingAction, onCancel);
         return;
       }
 
@@ -51,19 +53,23 @@ export function ConfirmCloseDialog({
 
         event.preventDefault();
         event.stopPropagation();
-        onConfirm();
+        void runPendingAction("confirm", setPendingAction, onConfirm);
       }
     }
 
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [onCancel, onConfirm]);
+  }, [isBusy, onCancel, onConfirm]);
 
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
       role="presentation"
-      onClick={onCancel}
+      onClick={() => {
+        if (!isBusy) {
+          void runPendingAction("cancel", setPendingAction, onCancel);
+        }
+      }}
     >
       <div
         role="alertdialog"
@@ -76,13 +82,23 @@ export function ConfirmCloseDialog({
           {title}
         </h4>
         <p className="mt-2 text-sm text-zinc-600">{message}</p>
-        <div className="mt-6 flex flex-wrap gap-2">
-          <button type="button" className={confirmClassName} onClick={onConfirm}>
-            {confirmLabel}
-          </button>
-          <button type="button" className={secondaryButtonClassName} onClick={onCancel}>
+        <div className={confirmDialogFooterClassName}>
+          <ActionButton
+            variant="secondary"
+            loading={pendingAction === "cancel"}
+            disabled={isBusy}
+            onClick={() => void runPendingAction("cancel", setPendingAction, onCancel)}
+          >
             {cancelLabel}
-          </button>
+          </ActionButton>
+          <ActionButton
+            variant={confirmVariant === "danger" ? "danger" : "primary"}
+            loading={pendingAction === "confirm"}
+            disabled={isBusy}
+            onClick={() => void runPendingAction("confirm", setPendingAction, onConfirm)}
+          >
+            {confirmLabel}
+          </ActionButton>
         </div>
       </div>
     </div>

@@ -5,8 +5,12 @@ import { MeterAddressModal } from "@/app/components/admin/meter-address-modal";
 import { MeterFormModal } from "@/app/components/admin/meter-form-modal";
 import {
   createEmptyMeter,
-  useDemoData,
-} from "@/app/components/demo-data-provider";
+  useAdminData,
+} from "@/app/components/admin-data-provider";
+import {
+  FeedbackToast,
+  type FeedbackToastVariant,
+} from "@/app/components/ui/feedback-toast";
 import {
   cardClassName,
   primaryButtonClassName,
@@ -19,16 +23,21 @@ import {
   IconPlus,
   IconTrash,
 } from "@/app/components/ui/icons";
+import { TableEmptyRow } from "@/app/components/ui/table-empty-row";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { METER_TYPE_LABELS } from "@/app/lib/demo/helpers";
 import { formatDateDisplay } from "@/app/lib/format-date";
 import type { DemoMeter } from "@/app/lib/demo/types";
 
 export function AdminMetersTab() {
-  const { state, deleteMeter } = useDemoData();
+  const { state, deleteMeter } = useAdminData();
   const [draft, setDraft] = useState<DemoMeter | null>(null);
   const [addressMeter, setAddressMeter] = useState<DemoMeter | null>(null);
   const [meterToDelete, setMeterToDelete] = useState<DemoMeter | null>(null);
+  const [feedback, setFeedback] = useState<{
+    message: string;
+    variant: FeedbackToastVariant;
+  } | null>(null);
 
   function openCreateForm() {
     setDraft(createEmptyMeter());
@@ -42,13 +51,19 @@ export function AdminMetersTab() {
     setDraft(null);
   }
 
-  function confirmDeleteMeter() {
+  async function confirmDeleteMeter() {
     if (!meterToDelete) {
       return;
     }
 
-    deleteMeter(meterToDelete.id);
+    const result = await deleteMeter(meterToDelete.id);
+    if (!result.ok) {
+      setFeedback({ message: result.message, variant: "error" });
+      return;
+    }
+
     setMeterToDelete(null);
+    setFeedback({ message: "Skaitītājs dzēsts.", variant: "success" });
   }
 
   const isExistingMeter = draft
@@ -80,7 +95,13 @@ export function AdminMetersTab() {
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {state.meters.map((meter) => {
+            {state.meters.length === 0 ? (
+              <TableEmptyRow
+                colSpan={3}
+                message="Nav skaitītāju. Pievienojiet pirmo ierakstu ar pogu Pievienot."
+              />
+            ) : (
+              state.meters.map((meter) => {
               const client = state.clients.find((item) => item.id === meter.clientId);
               return (
                 <tr key={meter.id}>
@@ -135,7 +156,8 @@ export function AdminMetersTab() {
                   </td>
                 </tr>
               );
-            })}
+            })
+            )}
           </tbody>
         </table>
       </div>
@@ -156,6 +178,14 @@ export function AdminMetersTab() {
           confirmVariant="danger"
           onConfirm={confirmDeleteMeter}
           onCancel={() => setMeterToDelete(null)}
+        />
+      ) : null}
+
+      {feedback ? (
+        <FeedbackToast
+          message={feedback.message}
+          variant={feedback.variant}
+          onDismiss={() => setFeedback(null)}
         />
       ) : null}
     </div>

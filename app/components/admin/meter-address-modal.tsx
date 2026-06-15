@@ -1,23 +1,28 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useDemoData } from "@/app/components/demo-data-provider";
+import { useAdminData } from "@/app/components/admin-data-provider";
 import { ConfirmCloseDialog } from "@/app/components/ui/confirm-close-dialog";
 import {
-  inputClassName,
+  FeedbackToast,
+  type FeedbackToastVariant,
+} from "@/app/components/ui/feedback-toast";
+import { ActionButton } from "@/app/components/ui/action-button";
+import {
   labelClassName,
-  primaryButtonClassName,
-  secondaryButtonClassName,
+  modalFooterClassName,
 } from "@/app/components/ui/form-styles";
+import { IconInput } from "@/app/components/ui/icon-input";
 import {
   IconLink,
-  IconMinus,
+  IconMapPin,
   IconSave,
   IconX,
 } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { useModalKeyboard } from "@/app/components/ui/use-modal-keyboard";
 import { METER_TYPE_LABELS, normalizeLookup } from "@/app/lib/demo/helpers";
+import { runPendingAction } from "@/app/lib/run-pending-action";
 import type { DemoClient, DemoMeter } from "@/app/lib/demo/types";
 
 type MeterAddressModalProps = {
@@ -36,11 +41,17 @@ function clientMatchesQuery(client: DemoClient, query: string): boolean {
 }
 
 export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
-  const { state, attachMeterToAddress } = useDemoData();
+  const { state, attachMeterToAddress } = useAdminData();
   const currentClient = state.clients.find((client) => client.id === meter.clientId) ?? null;
 
   const [query, setQuery] = useState("");
   const [hintsOpen, setHintsOpen] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    message: string;
+    variant: FeedbackToastVariant;
+  } | null>(null);
+  const [pendingAction, setPendingAction] = useState<"cancel" | "save" | null>(null);
+  const isBusy = pendingAction !== null;
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
     meter.clientId || null,
   );
@@ -93,23 +104,36 @@ export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
     setHintsOpen(false);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedClientId) {
       return;
     }
-    attachMeterToAddress(meter.id, selectedClientId);
-    onClose();
+
+    await runPendingAction("save", setPendingAction, async () => {
+      const result = await attachMeterToAddress(meter.id, selectedClientId);
+      if (!result.ok) {
+        setFeedback({ message: result.message, variant: "error" });
+        return;
+      }
+
+      onClose();
+    });
   }
 
-  function handleDetach() {
-    attachMeterToAddress(meter.id, null);
+  async function handleDetach() {
+    const result = await attachMeterToAddress(meter.id, null);
+    if (!result.ok) {
+      setFeedback({ message: result.message, variant: "error" });
+      return;
+    }
+
     onClose();
   }
 
   function confirmDetach() {
     setConfirmDetachOpen(false);
-    handleDetach();
+    void handleDetach();
   }
 
   return (
@@ -158,12 +182,12 @@ export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
               <label htmlFor="meter-address-query" className={labelClassName}>
                 Meklēt adresi
               </label>
-              <input
+              <IconInput
                 id="meter-address-query"
                 type="text"
                 value={query}
                 autoComplete="off"
-                placeholder="piem., Brīvības iela 1 vai K-12345"
+                placeholder="piem., Brīvības iela 1 vai 12345"
                 role="combobox"
                 aria-expanded={hintsOpen && hints.length > 0}
                 aria-controls="meter-address-hints"
@@ -178,7 +202,8 @@ export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
                     selectClient(hints[0]);
                   }
                 }}
-                className={`${inputClassName} mt-1`}
+                icon={<IconMapPin className="size-4" />}
+                wrapperClassName="mt-1"
               />
 
               {hintsOpen && query.trim() ? (
@@ -223,29 +248,37 @@ export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
             )}
           </div>
 
-          <div className="flex shrink-0 flex-wrap gap-2 border-t border-zinc-100 px-6 py-4">
-            <button
-              type="submit"
-              className={primaryButtonClassName}
-              disabled={!selectedClientId}
+          <div className={modalFooterClassName}>
+            <ActionButton
+              type="button"
+              variant="secondary"
+              loading={pendingAction === "cancel"}
+              disabled={isBusy}
+              icon={<IconX />}
+              onClick={() => void runPendingAction("cancel", setPendingAction, onClose)}
             >
-              <IconSave />
-              Saglabāt
-            </button>
+              Atcelt
+            </ActionButton>
             {currentClient ? (
-              <button
+              <ActionButton
                 type="button"
-                className={secondaryButtonClassName}
+                variant="danger"
+                disabled={isBusy}
+                icon={<IconX />}
                 onClick={() => setConfirmDetachOpen(true)}
               >
-                <IconMinus />
                 Noņemt adresi
-              </button>
+              </ActionButton>
             ) : null}
-            <button type="button" className={secondaryButtonClassName} onClick={onClose}>
-              <IconX />
-              Atcelt
-            </button>
+            <ActionButton
+              type="submit"
+              variant="primary"
+              loading={pendingAction === "save"}
+              disabled={!selectedClientId || isBusy}
+              icon={<IconSave />}
+            >
+              Saglabāt
+            </ActionButton>
           </div>
         </form>
       </div>
@@ -262,6 +295,14 @@ export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
           confirmVariant="danger"
           onConfirm={confirmDetach}
           onCancel={() => setConfirmDetachOpen(false)}
+        />
+      ) : null}
+
+      {feedback ? (
+        <FeedbackToast
+          message={feedback.message}
+          variant={feedback.variant}
+          onDismiss={() => setFeedback(null)}
         />
       ) : null}
     </div>

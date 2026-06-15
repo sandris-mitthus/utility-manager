@@ -2,12 +2,14 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { useDemoData } from "@/app/components/demo-data-provider";
+import { ActionButton } from "@/app/components/ui/action-button";
 import {
   cardClassName,
-  inputClassName,
 } from "@/app/components/ui/form-styles";
-import { IconArrowLeft, IconSend } from "@/app/components/ui/icons";
+import { IconInput } from "@/app/components/ui/icon-input";
+import { IconArrowLeft, IconGauge, IconSend } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
+import { runPendingAction } from "@/app/lib/run-pending-action";
 import {
   calculateConsumption,
   formatReading,
@@ -37,33 +39,37 @@ export function MeterReadingForm({ client, meters, onBack }: MeterReadingFormPro
     return result;
   }, [meters, values]);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  const [pendingAction, setPendingAction] = useState<"submit" | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
+    await runPendingAction("submit", setPendingAction, async () => {
+      setError(null);
 
-    const readings: Record<string, number> = {};
-    for (const meter of meters) {
-      const parsed = parsedValues[meter.id];
-      if (parsed === null) {
-        setError(`Ievadiet derīgu rādījumu skaitītājam ${meter.number}.`);
+      const readings: Record<string, number> = {};
+      for (const meter of meters) {
+        const parsed = parsedValues[meter.id];
+        if (parsed === null) {
+          setError(`Ievadiet derīgu rādījumu skaitītājam ${meter.number}.`);
+          return;
+        }
+        if (parsed < meter.previousReading) {
+          setError(
+            `Skaitītājam ${meter.number} rādījums nevar būt mazāks par iepriekšējo periodu (${formatReading(meter.previousReading)}).`,
+          );
+          return;
+        }
+        readings[meter.id] = parsed;
+      }
+
+      const result = submitReadings(client.id, readings);
+      if (!result.ok) {
+        setError(result.message);
         return;
       }
-      if (parsed < meter.previousReading) {
-        setError(
-          `Skaitītājam ${meter.number} rādījums nevar būt mazāks par iepriekšējo periodu (${formatReading(meter.previousReading)}).`,
-        );
-        return;
-      }
-      readings[meter.id] = parsed;
-    }
 
-    const result = submitReadings(client.id, readings);
-    if (!result.ok) {
-      setError(result.message);
-      return;
-    }
-
-    setSuccess(true);
+      setSuccess(true);
+    });
   }
 
   if (success) {
@@ -158,12 +164,12 @@ export function MeterReadingForm({ client, meters, onBack }: MeterReadingFormPro
                 <label htmlFor={`reading-${meter.id}`} className="sr-only">
                   Pašreizējais rādījums
                 </label>
-                <input
+                <IconInput
                   id={`reading-${meter.id}`}
                   type="text"
                   inputMode="decimal"
                   pattern="[0-9.,]*"
-                  placeholder="Ievadiet pašreizējo rādījumu"
+                  placeholder="piem., 125.4"
                   value={values[meter.id] ?? ""}
                   onChange={(event) => {
                     setValues((current) => ({
@@ -174,7 +180,8 @@ export function MeterReadingForm({ client, meters, onBack }: MeterReadingFormPro
                       setError(null);
                     }
                   }}
-                  className={`${inputClassName} text-right text-base`}
+                  icon={<IconGauge className="size-4" />}
+                  className="text-right text-base"
                 />
 
                 <p className="mt-2 text-right text-sm text-zinc-600">
@@ -190,13 +197,16 @@ export function MeterReadingForm({ client, meters, onBack }: MeterReadingFormPro
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-        <TooltipIconButton
-          tooltip="Iesniegt visu skaitītāju rādījumus"
-          icon={<IconSend />}
-          variant="primary"
+        <ActionButton
           type="submit"
-          className="w-full !px-3 !py-3"
-        />
+          variant="primary"
+          className="w-full !py-3"
+          loading={pendingAction === "submit"}
+          disabled={pendingAction !== null}
+          icon={<IconSend />}
+        >
+          Iesniegt rādījumus
+        </ActionButton>
       </form>
     </div>
   );

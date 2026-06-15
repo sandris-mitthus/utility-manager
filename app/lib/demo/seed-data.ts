@@ -11,19 +11,19 @@ export const DEMO_SEED: DemoDataState = {
   clients: [
     {
       id: "client-1",
-      clientNumber: "K-12345",
+      clientNumber: "12345",
       address: "Brīvības iela 1, Rīga",
       meterIds: ["meter-1", "meter-2", "meter-3", "meter-4", "meter-5"],
     },
     {
       id: "client-2",
-      clientNumber: "K-67890",
+      clientNumber: "67890",
       address: "Tallinas iela 5, Rīga",
       meterIds: ["meter-6", "meter-7", "meter-8"],
     },
     {
       id: "client-3",
-      clientNumber: "K-11111",
+      clientNumber: "11111",
       address: "Elizabetes iela 10, Rīga",
       meterIds: ["meter-9", "meter-10", "meter-11", "meter-12"],
     },

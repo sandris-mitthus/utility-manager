@@ -36,6 +36,12 @@ export function useModalKeyboard({
   }, []);
 
   useEffect(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  }, []);
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (blockKeyboard || confirmCloseOpen) {
         return;

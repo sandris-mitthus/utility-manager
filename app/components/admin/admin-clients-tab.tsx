@@ -5,8 +5,12 @@ import { ClientFormModal } from "@/app/components/admin/client-form-modal";
 import { ClientMetersModal } from "@/app/components/admin/client-meters-modal";
 import {
   createEmptyClient,
-  useDemoData,
-} from "@/app/components/demo-data-provider";
+  useAdminData,
+} from "@/app/components/admin-data-provider";
+import {
+  FeedbackToast,
+  type FeedbackToastVariant,
+} from "@/app/components/ui/feedback-toast";
 import {
   cardClassName,
   primaryButtonClassName,
@@ -19,14 +23,19 @@ import {
   IconPlus,
   IconTrash,
 } from "@/app/components/ui/icons";
+import { TableEmptyRow } from "@/app/components/ui/table-empty-row";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import type { DemoClient } from "@/app/lib/demo/types";
 
 export function AdminClientsTab() {
-  const { state, deleteClient } = useDemoData();
+  const { state, deleteClient } = useAdminData();
   const [draft, setDraft] = useState<DemoClient | null>(null);
   const [metersClient, setMetersClient] = useState<DemoClient | null>(null);
   const [clientToDelete, setClientToDelete] = useState<DemoClient | null>(null);
+  const [feedback, setFeedback] = useState<{
+    message: string;
+    variant: FeedbackToastVariant;
+  } | null>(null);
 
   function openCreateForm() {
     setDraft(createEmptyClient());
@@ -40,13 +49,19 @@ export function AdminClientsTab() {
     setDraft(null);
   }
 
-  function confirmDeleteClient() {
+  async function confirmDeleteClient() {
     if (!clientToDelete) {
       return;
     }
 
-    deleteClient(clientToDelete.id);
+    const result = await deleteClient(clientToDelete.id);
+    if (!result.ok) {
+      setFeedback({ message: result.message, variant: "error" });
+      return;
+    }
+
     setClientToDelete(null);
+    setFeedback({ message: "Klients dzēsts.", variant: "success" });
   }
 
   const isExistingClient = draft
@@ -79,7 +94,13 @@ export function AdminClientsTab() {
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {state.clients.map((client) => (
+            {state.clients.length === 0 ? (
+              <TableEmptyRow
+                colSpan={4}
+                message="Nav klientu. Pievienojiet pirmo ierakstu ar pogu Pievienot."
+              />
+            ) : (
+              state.clients.map((client) => (
               <tr key={client.id}>
                 <td className="px-3 py-3 font-medium text-zinc-900">
                   {client.clientNumber}
@@ -109,7 +130,8 @@ export function AdminClientsTab() {
                   </div>
                 </td>
               </tr>
-            ))}
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -134,6 +156,14 @@ export function AdminClientsTab() {
           confirmVariant="danger"
           onConfirm={confirmDeleteClient}
           onCancel={() => setClientToDelete(null)}
+        />
+      ) : null}
+
+      {feedback ? (
+        <FeedbackToast
+          message={feedback.message}
+          variant={feedback.variant}
+          onDismiss={() => setFeedback(null)}
         />
       ) : null}
     </div>

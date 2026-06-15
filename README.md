@@ -1,8 +1,8 @@
 # Utility Manager
 
-Next.js starter for utility management apps — Google OAuth, Supabase Postgres, and Vercel deployment. Based on the same stack and patterns as [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
+Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.2` (see [Changelog](#changelog))
+**Current version:** `1.0.7` (see [Changelog](#changelog))
 
 ---
 
@@ -10,15 +10,16 @@ Next.js starter for utility management apps — Google OAuth, Supabase Postgres,
 
 ### Authentication
 
-- **Google OAuth** via Supabase — when not signed in, only a centered “Pierakstīties ar Google” button is shown
-- Protected app routes under `app/(protected)/`; OAuth callback at `/auth/callback`
-- Session refresh via `proxy.ts` on every request (prunes foreign Supabase cookies when multiple apps share `localhost`)
-- **Top nav (right):** signed-in user avatar, name, and sign-out button
+- **Sākums** (`/`) — publisks, bez pieslēgšanās
+- **Administrācija** (`/admin`) — e-pasts + parole; tikai lietotāji tabulā `admin_users`
+- Supabase Auth (e-pasts/parole) + `admin_users` whitelist (`app/lib/auth/`)
+- Session refresh via `proxy.ts` (prunes foreign Supabase cookies when multiple apps share `localhost`)
+- Admin seed: `npm run db:seed-admin` (ENV `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD`)
 
 ### Starter UI
 
-- **Sākums** (`/`) — klienta numura/adreses meklēšana, rādījumu ievade, FAQ (demo dati atmiņā)
-- **Administrācija** (`/admin`) — klienti, skaitītāji, iesniegtie rādījumi, kontaktu iestatījumi (demo UI, backend vēlāk)
+- **Sākums** (`/`) — klienta meklēšana, rādījumu ievade, FAQ; kontakti FAQ no `contact_settings` (DB); SMS/WhatsApp/e-pastam kopēšanas bloki; galvenās pogas ar ikonu + tekstu (`ActionButton`)
+- **Administrācija** (`/admin`) — klienti, skaitītāji, iesniegtie rādījumi, kontaktu iestatījumi (Supabase DB + API); tukšām tabulām ziņojums; iestatījumu „Saglabāt” labajā; modāļu kājas labajā, secība Atcelt → Noņemt → Saglabāt
 - **App nav** — app name from `app_settings.app_name` (fallback: “Utility Manager”)
 - **SectionPage** layout helper for new screens
 
@@ -26,8 +27,10 @@ Next.js starter for utility management apps — Google OAuth, Supabase Postgres,
 
 - **Supabase** (Postgres) when env is configured
 - **`app_settings`** singleton (`id = 1`) — `app_name` for branding in nav and home subtitle
+- **`contact_settings`**, **`clients`**, **`meters`** — admin CRUD (migrācijas `005`, `006` ar demo seed)
+- **`admin_users`** — administratoru e-pasta whitelist (`002`–`004`)
 - App tables use **service-role server access** with RLS deny policies for browser clients
-- `npm run db:migrate` applies only **pending** migrations (tracked in `public.schema_migrations`)
+- `npm run db:migrate` applies only **pending** migrations (tracked in `public.schema_migrations`); pēc migrācijas automātiski pārlādē PostgREST kešu
 
 ### Security
 
@@ -59,7 +62,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3001](http://localhost:3001) — login gate if Supabase auth is configured.
+Open [http://localhost:3001](http://localhost:3001) — publisks sākums; `/admin` prasa administratora login.
 
 **Local dev tip:** Multiple Supabase apps on `localhost` share cookies and can trigger HTTP **431** (headers too large). Use `127.0.0.1` for one app, or clear `sb-*` cookies; `dev`/`start` scripts raise the header limit and the session proxy prunes foreign Supabase cookies.
 
@@ -72,7 +75,9 @@ Open [http://localhost:3001](http://localhost:3001) — login gate if Supabase a
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run db:migrate` | Apply pending SQL migrations to Supabase Postgres |
-| `npm run db:test` | Test Supabase connection, auth, and `app_settings` |
+| `npm run db:reload-schema` | Reload PostgREST schema cache (`NOTIFY pgrst`) |
+| `npm run db:seed-admin` | Sync Supabase Auth user + `admin_users` row from ENV |
+| `npm run db:test` | Test Supabase connection and core tables |
 
 ### Environment
 
@@ -87,6 +92,8 @@ Copy `.env.example` → `.env.local` and fill in **real** values locally. Never 
 | `NEXT_PUBLIC_SITE_URL` | Auth | `http://localhost:3001` locally; OAuth redirect base |
 | `SUPABASE_DB_PASSWORD` or `DATABASE_URL` | Migrations | `npm run db:migrate` only |
 | `SUPABASE_DB_REGION` | Migrations | Pooler region (default `eu-west-1`) if direct `db.*` host fails |
+| `ADMIN_SEED_EMAIL` | Admin seed | `npm run db:seed-admin` |
+| `ADMIN_SEED_PASSWORD` | Admin seed | `npm run db:seed-admin` |
 
 ### Supabase setup
 
@@ -96,16 +103,17 @@ Copy `.env.example` → `.env.local` and fill in **real** values locally. Never 
 
 ```bash
 npm run db:migrate
+npm run db:seed-admin
 npm run db:test
 ```
 
-4. Enable **Google** provider: Authentication → Providers → Google
+4. Enable **Email** provider: Authentication → Providers → Email
 5. Set redirect URLs: Authentication → URL Configuration  
    - Site URL: `http://localhost:3001`  
-   - Redirect: `http://localhost:3001/auth/callback`
-6. Start the app — sign in, then `/` shows system status
+   - Redirect: `http://localhost:3001/auth/callback` (ja izmanto OAuth callback)
+6. Atveriet `/` (publisks) vai `/admin` (admin login)
 
-**Schema:** `supabase/migrations/` — `001_app_settings.sql` (`app_settings` singleton + `set_updated_at()`), `schema_migrations` (auto-managed by migrate script)
+**Schema:** `supabase/migrations/` — `001`–`007` (`app_settings`, `admin_users`, `contact_settings`, `clients`, `meters` + demo seed); `schema_migrations` (auto-managed by migrate script)
 
 ---
 
@@ -145,28 +153,32 @@ Run `npm run db:migrate` from your machine against the production Supabase DB wh
 ```
 app/
 ├── (protected)/
-│   ├── layout.tsx      # Login gate or AppNav + children
-│   ├── page.tsx        # Client lookup, readings, FAQ
-│   └── admin/page.tsx  # Admin panel (demo data)
+│   ├── layout.tsx           # Route shell (no global demo provider)
+│   ├── page.tsx             # Client lookup, FAQ contact_settings from DB; demo clients in memory
+│   └── admin/
+│       ├── layout.tsx       # Admin auth gate + AdminDataProvider
+│       └── page.tsx         # AdminPanel
+├── api/admin/               # settings, clients, meters (require admin session)
 ├── auth/
 │   ├── callback/
 │   └── auth-code-error/
 ├── components/
-│   ├── admin/          # clients, meters, submissions, settings tabs + modals
+│   ├── admin/               # tabs, modals, admin-login-gate
+│   ├── admin-data-provider.tsx
 │   ├── demo-data-provider.tsx
 │   ├── contract-lookup-panel.tsx, meter-reading-form.tsx, faq-accordion.tsx
-│   └── ui/             # confirm-close-dialog, tooltip-button, use-modal-keyboard
+│   └── ui/                  # action-button, icon-input, table-empty-row, feedback-toast, …
 └── lib/
     ├── auth/
-    ├── demo/           # seed data, FAQ items, helpers
+    ├── demo/
+    ├── utility/             # loadContactSettings, loadUtilityAdminState
     ├── format-date.ts
-    ├── security/
     ├── settings/
     └── supabase/
 proxy.ts
-scripts/                # db:migrate, db:test
+scripts/                     # db:migrate, db:reload-schema, db:seed-admin, db:test
 supabase/migrations/
-.cursor/rules/          # admin-demo-ui, README bump, GitHub commits, db:migrate, Supabase security
+.cursor/rules/
 ```
 
 Public repo: [github.com/sandris-mitthus/utility-manager](https://github.com/sandris-mitthus/utility-manager)
@@ -189,12 +201,14 @@ Short description of what shipped. v1.0.1
 
 Cursor rules:
 
-- `.cursor/rules/admin-demo-ui.mdc` — admin modāļi, pogas, tabulas, apstiprinājumi
+- `.cursor/rules/admin-demo-ui.mdc` — admin modāļi, pogas, tabulas, `IconInput` / `PasswordInput`
+- `.cursor/rules/feedback-toast.mdc` — atbildes ar `FeedbackToast`
 - `.cursor/rules/readme-version-update.mdc` — README update + version bump
 - `.cursor/rules/github-version-commit.mdc` — commit message format; run `typecheck` + `build` before commit/push
 - `.cursor/rules/db-migrate-after-sql.mdc` — run `npm run db:migrate` after new SQL
 - `.cursor/rules/supabase-migration-security.mdc` — RLS deny policies, `search_path`, storage rules
 - `.cursor/rules/button-cursor-pointer.mdc` — all buttons use `cursor: pointer` (base styles in `globals.css`)
+- `.cursor/rules/button-action-loading.mdc` — `ActionButton` ar loading spinner darbības pogām
 
 ---
 
@@ -203,6 +217,34 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.7
+
+- **Klienta numurs** — noņemts `K-` prefikss demo datos, placeholderos, FAQ un admin formās; migrācija `007`
+
+### v1.0.6
+
+- **FAQ** — tālrunis, SMS, WhatsApp un e-pasts no `contact_settings`; kopēšanas bloki SMS/WhatsApp/e-pastam (ne zvanīšanai)
+- **Sākums** — `loadContactSettings()` serverī; noņemts demo padoms zem meklēšanas lauka; `ActionButton` uz „Turpināt”
+- **Admin** — tukšām tabulām `TableEmptyRow`; iestatījumu „Saglabāt” labajā pusē
+
+### v1.0.5
+
+- **Modāļi** — kājas labajā; secība Atcelt → Noņemt → Saglabāt; noņemšanai sarkanīgs `dangerButtonClassName`
+- **Tooltip** — tabulas pogas tooltip vairs nepaliek virs modāļa; klikšķī paslēpjas
+- **Sākums** — „Turpināt” un „Iesniegt rādījumus” ar tekstu blakus ikonai (bez tooltip)
+
+### v1.0.4
+
+- **Formu lauki** — `IconInput`, `PasswordInput`, `IconSelect` visur; placeholderi un ikonas; parole ar rādīt/paslēpt
+- **DB** — PostgREST keša pārlāde pēc `db:migrate`; `npm run db:reload-schema`
+- **Admin UI** — iestatījumu „E-pasta parole”; „Noņemt adresi” ar X ikonu
+
+### v1.0.3
+
+- **Admin DB** — `contact_settings`, `clients`, `meters` tabulas + demo seed (`005`, `006`); API `/api/admin/*`
+- **Admin frontend** — `AdminDataProvider`, settings/clients/meters saglabāšana uz Supabase; publiskais `/` paliek demo atmiņā
+- **Cursor rule** — `db-migrate-after-sql.mdc` ar `alwaysApply: true`
 
 ### v1.0.2
 

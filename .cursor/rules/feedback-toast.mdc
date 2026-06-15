@@ -1,0 +1,47 @@
+---
+description: Atbildes un kļūdas — FeedbackToast popup, ne inline teksts formā
+globs: app/components/**/*.tsx
+alwaysApply: true
+---
+
+# Feedback toast (popup)
+
+Lietotāja atbildes (kļūdas, veiksmīgi, brīdinājumi) rāda ar **`FeedbackToast`** (`app/components/ui/feedback-toast.tsx`), nevis pastāvīgu sarkanu/bloku tekstu formas vidū.
+
+## Kad lietot
+
+- Login / formu kļūdas
+- Saglabāšanas neveiksme vai apstiprinājuma ziņojumi
+- Īsi API / validācijas feedback
+
+## Uzvedība (obligāta)
+
+- Pēc noklusējuma **pazūd** pēc `durationMs` (noklusējums **5000** ms)
+- **`onMouseEnter`** — taimeris **apstājas**, toast **paliek**
+- **`onMouseLeave`** — taimeris **atsākas**, pēc tam toast pazūd
+- Poga **X** — aizver uzreiz (`onDismiss`)
+- `role="alert"`, `aria-live="assertive"`
+
+## Varianti
+
+`error` | `success` | `info` | `warning`
+
+## Piemērs
+
+```tsx
+{feedback ? (
+  <FeedbackToast
+    message={feedback.message}
+    variant={feedback.variant}
+    onDismiss={() => setFeedback(null)}
+  />
+) : null}
+```
+
+Toast renderēt **ārpus** kartes/formas (fixed pozīcija komponentē), lai nepārklājas ar laukiem.
+
+## Ko nedarīt
+
+- ❌ Kļūdas tikai `<p className="text-red-600">` zem lauka (izņēmums: lauka validācija pie konkrēta input)
+- ❌ `window.alert` / `confirm` lietotāja feedbackam
+- ❌ Toast bez hover pause loģikas

@@ -1,18 +1,30 @@
 import type { FaqItem } from "@/app/components/faq-accordion";
 import type { DemoContactSettings } from "@/app/lib/demo/types";
 
-export const EMAIL_READING_TEMPLATE = `Klienta numurs: KLIENTA NUMURS
+export const READING_SUBMISSION_TEMPLATE = `Klienta numurs: KLIENTA NUMURS
 Aukstais ūdens: AUKSTA ŪDENS RĀDĪJUMI
 Karstais ūdens: KARSTA ŪDENS RĀDĪJUMI
 Kanalizācija: KANALIZĀCIJAS RĀDĪJUMI`;
 
+/** @deprecated use READING_SUBMISSION_TEMPLATE */
+export const EMAIL_READING_TEMPLATE = READING_SUBMISSION_TEMPLATE;
+
+function trimmed(value: string) {
+  return value.trim();
+}
+
 export function buildFaqItems(settings: DemoContactSettings): FaqItem[] {
+  const phoneNumber = trimmed(settings.phoneNumber);
+  const smsNumber = trimmed(settings.smsNumber);
+  const whatsappNumber = trimmed(settings.whatsappNumber);
+  const email = trimmed(settings.email);
+
   return [
     {
       id: "where-client-number",
       question: "Kur atrodams klienta numurs?",
       answer:
-        "Klienta numurs parasti ir norādīts rēķinā augšējā labajā stūrī vai klientu portāla profilā. Tas var sākties ar burtiem, piemēram, K-.",
+        "Klienta numurs parasti ir norādīts rēķinā augšējā labajā stūrī vai klientu portāla profilā.",
     },
     {
       id: "use-address",
@@ -23,23 +35,36 @@ export function buildFaqItems(settings: DemoContactSettings): FaqItem[] {
     {
       id: "phone-call",
       question: "Uz kādu numuru jāzvana, lai iesniegtu rādījumus?",
-      answer: `Zvaniet uz ${settings.phoneNumber}. Darba laikā operatori pieņems rādījumus pa tālruni.`,
+      answer: phoneNumber
+        ? `Zvaniet uz ${phoneNumber}. Darba laikā operatori pieņems rādījumus pa tālruni.`
+        : "Tālruņa numurs vēl nav norādīts. Sazinieties ar administratoru.",
     },
     {
       id: "sms",
       question: "Uz kādu numuru varu sūtīt SMS, lai nodotu rādījumus?",
-      answer: `Sūtiet SMS uz ${settings.smsNumber}. Ziņojumā norādiet klienta numuru un skaitītāju rādījumus.`,
+      answer: smsNumber
+        ? `Sūtiet SMS uz ${smsNumber}. Ziņojumā norādiet klienta numuru un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.`
+        : "SMS numurs vēl nav norādīts. Sazinieties ar administratoru.",
+      copyTemplate: smsNumber ? READING_SUBMISSION_TEMPLATE : undefined,
+      copyLabel: "Ieteicamais SMS teksts",
     },
     {
       id: "whatsapp",
       question: "Uz kādu numuru WhatsApp varu sūtīt rādījumus?",
-      answer: `WhatsApp ziņas sūtiet uz ${settings.whatsappNumber}. Pievienojiet klienta numuru un skaitītāju rādījumus.`,
+      answer: whatsappNumber
+        ? `WhatsApp ziņas sūtiet uz ${whatsappNumber}. Pievienojiet klienta numuru un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.`
+        : "WhatsApp numurs vēl nav norādīts. Sazinieties ar administratoru.",
+      copyTemplate: whatsappNumber ? READING_SUBMISSION_TEMPLATE : undefined,
+      copyLabel: "Ieteicamais WhatsApp teksts",
     },
     {
       id: "email",
       question: "Uz kādu e-pastu jāsūta e-pasts, lai iesniegtu rādījumus?",
-      answer: `Rādījumus var iesniegt e-pastā: ${settings.email}. Zemāk ir teksts, ko varat nokopēt un aizpildīt ar saviem rādījumiem.`,
-      copyTemplate: EMAIL_READING_TEMPLATE,
+      answer: email
+        ? `Rādījumus var iesniegt e-pastā: ${email}. Zemāk ir teksts, ko varat nokopēt un aizpildīt ar saviem rādījumiem.`
+        : "E-pasta adrese vēl nav norādīta. Sazinieties ar administratoru.",
+      copyTemplate: email ? READING_SUBMISSION_TEMPLATE : undefined,
+      copyLabel: "Ieteicamais e-pasta teksts",
     },
     {
       id: "not-found",

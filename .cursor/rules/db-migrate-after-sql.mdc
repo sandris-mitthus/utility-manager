@@ -1,7 +1,7 @@
 ---
 description: After SQL migration changes, run db:migrate; on failure fix SQL and retry until success
 globs: supabase/migrations/**/*.sql
-alwaysApply: false
+alwaysApply: true
 ---
 
 # DB migrations — run, fix, retry
@@ -33,7 +33,7 @@ If `npm run db:migrate` exits with an error:
 3. **Run `npm run db:migrate` again** immediately.
 4. **Repeat** until success or you hit a blocker you cannot fix without the user (missing env, wrong password, no network).
 
-Do **not** stop after the first failure with “please run migrate” when the error is fixable SQL/schema logic.
+After migrations are applied, `apply-migrations.mjs` runs `NOTIFY pgrst, 'reload schema'`. If the API still reports a missing table, run `npm run db:reload-schema`.
 
 ## 4. Report to user
 

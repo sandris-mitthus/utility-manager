@@ -1,0 +1,41 @@
+---
+description: Darbības pogas — loading spinner un disabled kamēr notiek async darbība
+globs: app/components/**/*.tsx
+alwaysApply: true
+---
+
+# Darbības pogas — loading
+
+Kad lietotājs nospiež **Saglabāt**, **Atcelt**, **Dzēst**, **Noņemt** vai citu darbību pogu ar async / apstiprinājumu:
+
+## Obligāti
+
+- Lietot **`ActionButton`** (`app/components/ui/action-button.tsx`) vai tādu pašu uzvedību.
+- **`loading={true}`** uz nospiestās pogas — rāda **`IconSpinner`** ikonas vietā.
+- Kamēr darbība notiek: **visa kāja / dialogs** — pārējās pogas **`disabled`** (`pendingAction !== null`).
+- Async plūsma caur **`runPendingAction`** (`app/lib/run-pending-action.ts`).
+- ❌ Tikai teksta maiņa „Saglabā...” bez spinnera.
+
+## Kur attiecas
+
+- Admin modāļu kājas (`modalFooterClassName`)
+- **`ConfirmCloseDialog`** — Atcelt / apstiprināt
+- Formu submit (`admin-settings`, login, publiskais sākums)
+- Tabulu dzēšanas apstiprinājumi
+
+## Piemērs
+
+```tsx
+const [pendingAction, setPendingAction] = useState<"cancel" | "save" | null>(null);
+const isBusy = pendingAction !== null;
+
+<ActionButton
+  variant="secondary"
+  loading={pendingAction === "cancel"}
+  disabled={isBusy}
+  icon={<IconX />}
+  onClick={() => void runPendingAction("cancel", setPendingAction, onClose)}
+>
+  Atcelt
+</ActionButton>
+```

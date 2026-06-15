@@ -10,7 +10,8 @@ Visām **klikšķināmām pogām** jāparāda rokas kursors (`cursor: pointer`).
 
 ## Vienots avots
 
-Bāzes stils ir **`app/globals.css`** — visi `<button>` un submit/reset inputi automātiski saņem `cursor: pointer`. Jaunām pogām **nav jāatkārto** `cursor-pointer`, ja vien nav īpaša izņēmuma.
+- **`app/globals.css`** — visi `<button>` un submit/reset inputi automātiski `cursor: pointer`
+- **`app/components/ui/form-styles.ts`** — `primaryButtonClassName`, `secondaryButtonClassName`, `dangerButtonClassName` ietver `cursor-pointer`
 
 Atspējotām pogām: `cursor: not-allowed`.
 

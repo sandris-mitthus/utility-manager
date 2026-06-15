@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useDemoData } from "@/app/components/demo-data-provider";
+import { useAdminData } from "@/app/components/admin-data-provider";
 import {
   cardClassName,
   secondaryButtonClassName,
@@ -20,7 +20,7 @@ import {
 import { formatDateTimeDisplay } from "@/app/lib/format-date";
 
 export function AdminSubmissionsTab() {
-  const { state, hasSubmission } = useDemoData();
+  const { state, hasSubmission } = useAdminData();
   const currentMonth = getCurrentMonthKey();
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const previousMonthKey = shiftMonthKey(selectedMonth, -1);
@@ -79,17 +79,28 @@ export function AdminSubmissionsTab() {
         </div>
       </div>
 
-      <SubmissionGroup
-        title="Iesnieguši"
-        emptyText="Šim mēnesim vēl nav iesniegumu."
-        rows={submittedRows}
-      />
+      {state.clients.length === 0 ? (
+        <section className={cardClassName}>
+          <p className="text-sm text-zinc-500">
+            Nav klientu, tāpēc šeit nebūs iesniegumu. Vispirms pievienojiet klientus cilnē
+            Klienti.
+          </p>
+        </section>
+      ) : (
+        <>
+          <SubmissionGroup
+            title="Iesnieguši"
+            emptyText="Šim mēnesim vēl nav iesniegumu."
+            rows={submittedRows}
+          />
 
-      <SubmissionGroup
-        title="Nav iesnieguši"
-        emptyText="Visi klienti ir iesnieguši rādījumus."
-        rows={pendingRows}
-      />
+          <SubmissionGroup
+            title="Nav iesnieguši"
+            emptyText="Visi klienti ir iesnieguši rādījumus."
+            rows={pendingRows}
+          />
+        </>
+      )}
     </div>
   );
 }

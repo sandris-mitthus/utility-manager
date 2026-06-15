@@ -9,6 +9,7 @@ export type FaqItem = {
   question: string;
   answer: string;
   copyTemplate?: string;
+  copyLabel?: string;
 };
 
 type FaqAccordionProps = {
@@ -63,7 +64,7 @@ export function FaqAccordion({
                 >
                   <p>{item.answer}</p>
                   {item.copyTemplate ? (
-                    <CopyableTextBlock text={item.copyTemplate} />
+                    <CopyableTextBlock text={item.copyTemplate} label={item.copyLabel} />
                   ) : null}
                 </div>
               ) : null}

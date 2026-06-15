@@ -1,16 +1,28 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useDemoData } from "@/app/components/demo-data-provider";
+import { useAdminData } from "@/app/components/admin-data-provider";
 import { ConfirmCloseDialog } from "@/app/components/ui/confirm-close-dialog";
 import {
-  inputClassName,
+  FeedbackToast,
+  type FeedbackToastVariant,
+} from "@/app/components/ui/feedback-toast";
+import { ActionButton } from "@/app/components/ui/action-button";
+import {
   labelClassName,
-  primaryButtonClassName,
-  secondaryButtonClassName,
-  selectClassName,
+  modalFooterClassName,
 } from "@/app/components/ui/form-styles";
-import { IconLink, IconSave, IconX } from "@/app/components/ui/icons";
+import { IconInput, IconSelect } from "@/app/components/ui/icon-input";
+import {
+  IconCalendar,
+  IconChart,
+  IconGauge,
+  IconHome,
+  IconLink,
+  IconMapPin,
+  IconSave,
+  IconX,
+} from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { useModalKeyboard } from "@/app/components/ui/use-modal-keyboard";
 import { METER_TYPE_LABELS, normalizeLookup } from "@/app/lib/demo/helpers";
@@ -19,6 +31,7 @@ import {
   parseDisplayDateToIso,
   sanitizeDisplayDateInput,
 } from "@/app/lib/format-date";
+import { runPendingAction } from "@/app/lib/run-pending-action";
 import type { DemoClient, DemoMeter, MeterType } from "@/app/lib/demo/types";
 
 const METER_TYPES = Object.keys(METER_TYPE_LABELS) as MeterType[];
@@ -40,7 +53,7 @@ function clientMatchesQuery(client: DemoClient, query: string): boolean {
 }
 
 export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalProps) {
-  const { state, saveMeter } = useDemoData();
+  const { state, saveMeter } = useAdminData();
   const [number, setNumber] = useState(meter.number);
   const [type, setType] = useState<MeterType>(meter.type);
   const [location, setLocation] = useState(meter.location);
@@ -53,6 +66,12 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
   );
   const [addressQuery, setAddressQuery] = useState("");
   const [hintsOpen, setHintsOpen] = useState(false);
+  const [feedback, setFeedback] = useState<{
+    message: string;
+    variant: FeedbackToastVariant;
+  } | null>(null);
+  const [pendingAction, setPendingAction] = useState<"cancel" | "save" | null>(null);
+  const isBusy = pendingAction !== null;
   const addressInputWrapRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -126,7 +145,7 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
     setHintsOpen(false);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const trimmedNumber = number.trim();
@@ -136,16 +155,24 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
       return;
     }
 
-    saveMeter({
-      ...meter,
-      number: trimmedNumber,
-      type,
-      location: trimmedLocation,
-      clientId: selectedClientId,
-      verificationDate,
-      previousReading,
+    await runPendingAction("save", setPendingAction, async () => {
+      const result = await saveMeter({
+        ...meter,
+        number: trimmedNumber,
+        type,
+        location: trimmedLocation,
+        clientId: selectedClientId,
+        verificationDate,
+        previousReading,
+      });
+
+      if (!result.ok) {
+        setFeedback({ message: result.message, variant: "error" });
+        return;
+      }
+
+      onClose();
     });
-    onClose();
   }
 
   return (
@@ -189,40 +216,43 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
             <label htmlFor="meter-number" className={labelClassName}>
               Skaitītāja numurs
             </label>
-            <input
+            <IconInput
               id="meter-number"
               value={number}
               onChange={(event) => setNumber(event.target.value)}
-              className={`${inputClassName} mt-1`}
+              placeholder="piem., HW-1001"
+              icon={<IconGauge className="size-4" />}
+              wrapperClassName="mt-1"
             />
           </div>
           <div>
             <label htmlFor="meter-type" className={labelClassName}>
               Veids
             </label>
-            <select
+            <IconSelect
               id="meter-type"
               value={type}
               onChange={(event) => setType(event.target.value as MeterType)}
-              className={`${selectClassName} mt-1`}
+              icon={<IconGauge className="size-4" />}
+              wrapperClassName="mt-1"
             >
               {METER_TYPES.map((meterType) => (
                 <option key={meterType} value={meterType}>
                   {METER_TYPE_LABELS[meterType]}
                 </option>
               ))}
-            </select>
+            </IconSelect>
           </div>
           <div ref={addressInputWrapRef}>
             <label htmlFor="meter-address-query" className={labelClassName}>
               Klients / adrese
             </label>
-            <input
+            <IconInput
               id="meter-address-query"
               type="text"
               value={addressQuery}
               autoComplete="off"
-              placeholder="piem., Brīvības iela 1 vai K-12345"
+              placeholder="piem., Brīvības iela 1 vai 12345"
               role="combobox"
               aria-expanded={hintsOpen && addressHints.length > 0}
               aria-controls="meter-form-address-hints"
@@ -237,7 +267,8 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
                   selectClient(addressHints[0]);
                 }
               }}
-              className={`${inputClassName} mt-1`}
+              icon={<IconMapPin className="size-4" />}
+              wrapperClassName="mt-1"
             />
 
             {hintsOpen && addressQuery.trim() ? (
@@ -284,19 +315,20 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
             <label htmlFor="meter-location" className={labelClassName}>
               Atrašanās vieta
             </label>
-            <input
+            <IconInput
               id="meter-location"
               value={location}
               onChange={(event) => setLocation(event.target.value)}
               placeholder="piem., Virtuve, Sanmezgls"
-              className={`${inputClassName} mt-1`}
+              icon={<IconHome className="size-4" />}
+              wrapperClassName="mt-1"
             />
           </div>
           <div>
             <label htmlFor="meter-verification" className={labelClassName}>
               Verifikācijas datums
             </label>
-            <input
+            <IconInput
               id="meter-verification"
               type="text"
               inputMode="numeric"
@@ -305,41 +337,63 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
               onChange={(event) =>
                 setVerificationDateDisplay(sanitizeDisplayDateInput(event.target.value))
               }
-              className={`${inputClassName} mt-1`}
+              icon={<IconCalendar className="size-4" />}
+              wrapperClassName="mt-1"
             />
           </div>
           <div>
             <label htmlFor="meter-previous" className={labelClassName}>
               Iepriekšējā perioda rādījums
             </label>
-            <input
+            <IconInput
               id="meter-previous"
               type="number"
               min="0"
               step="0.1"
               value={previousReading}
               onChange={(event) => setPreviousReading(Number(event.target.value))}
-              className={`${inputClassName} mt-1`}
+              placeholder="piem., 125.4"
+              icon={<IconChart className="size-4" />}
+              wrapperClassName="mt-1"
             />
           </div>
         </div>
           </div>
 
-          <div className="flex shrink-0 flex-wrap gap-2 border-t border-zinc-100 px-6 py-4">
-          <button type="submit" className={primaryButtonClassName}>
-            <IconSave />
-            Saglabāt
-          </button>
-          <button type="button" className={secondaryButtonClassName} onClick={onClose}>
-            <IconX />
+          <div className={modalFooterClassName}>
+          <ActionButton
+            type="button"
+            variant="secondary"
+            loading={pendingAction === "cancel"}
+            disabled={isBusy}
+            icon={<IconX />}
+            onClick={() => void runPendingAction("cancel", setPendingAction, onClose)}
+          >
             Atcelt
-          </button>
+          </ActionButton>
+          <ActionButton
+            type="submit"
+            variant="primary"
+            loading={pendingAction === "save"}
+            disabled={isBusy}
+            icon={<IconSave />}
+          >
+            Saglabāt
+          </ActionButton>
           </div>
         </form>
       </div>
 
       {confirmCloseOpen ? (
         <ConfirmCloseDialog onConfirm={confirmClose} onCancel={dismissConfirmClose} />
+      ) : null}
+
+      {feedback ? (
+        <FeedbackToast
+          message={feedback.message}
+          variant={feedback.variant}
+          onDismiss={() => setFeedback(null)}
+        />
       ) : null}
     </div>
   );

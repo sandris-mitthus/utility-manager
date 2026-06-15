@@ -4,13 +4,14 @@ import { FormEvent, useMemo, useState } from "react";
 import { FaqAccordion } from "@/app/components/faq-accordion";
 import { useDemoData } from "@/app/components/demo-data-provider";
 import { MeterReadingForm } from "@/app/components/meter-reading-form";
+import { ActionButton } from "@/app/components/ui/action-button";
 import {
   cardClassName,
-  inputClassName,
   labelClassName,
 } from "@/app/components/ui/form-styles";
-import { IconArrowRight } from "@/app/components/ui/icons";
-import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
+import { IconInput } from "@/app/components/ui/icon-input";
+import { IconArrowRight, IconMapPin } from "@/app/components/ui/icons";
+import { runPendingAction } from "@/app/lib/run-pending-action";
 import { buildFaqItems } from "@/app/lib/demo/faq-items";
 import type { DemoClient } from "@/app/lib/demo/types";
 
@@ -22,25 +23,29 @@ export function ContractLookupPanel() {
 
   const faqItems = useMemo(() => buildFaqItems(state.settings), [state.settings]);
 
+  const [pendingAction, setPendingAction] = useState<"submit" | null>(null);
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const trimmed = clientLookup.trim();
-    if (!trimmed) {
-      setError("Ievadiet klienta numuru vai adresi.");
-      setSelectedClient(null);
-      return;
-    }
+    void runPendingAction("submit", setPendingAction, async () => {
+      const trimmed = clientLookup.trim();
+      if (!trimmed) {
+        setError("Ievadiet klienta numuru vai adresi.");
+        setSelectedClient(null);
+        return;
+      }
 
-    const client = findClient(trimmed);
-    if (!client) {
-      setError("Klients nav atrasts. Demo: K-12345 vai Brīvības iela 1, Rīga.");
-      setSelectedClient(null);
-      return;
-    }
+      const client = findClient(trimmed);
+      if (!client) {
+        setError("Klients nav atrasts. Pārbaudiet numuru vai adresi.");
+        setSelectedClient(null);
+        return;
+      }
 
-    setError(null);
-    setSelectedClient(client);
+      setError(null);
+      setSelectedClient(client);
+    });
   }
 
   if (selectedClient) {
@@ -69,14 +74,14 @@ export function ContractLookupPanel() {
             <label htmlFor="client-lookup" className={labelClassName}>
               Klienta numurs vai adrese
             </label>
-            <input
+            <IconInput
               id="client-lookup"
               name="clientLookup"
               type="text"
               inputMode="text"
               autoComplete="street-address"
               spellCheck={false}
-              placeholder="piem., K-12345 vai Brīvības iela 1, Rīga"
+              placeholder="piem., 12345 vai Brīvības iela 1, Rīga"
               value={clientLookup}
               onChange={(event) => {
                 setClientLookup(event.target.value);
@@ -85,29 +90,30 @@ export function ContractLookupPanel() {
                 }
               }}
               aria-invalid={error ? true : undefined}
-              aria-describedby={error ? "client-lookup-error" : "client-lookup-hint"}
-              className={`${inputClassName} mt-2 ${
+              aria-describedby={error ? "client-lookup-error" : undefined}
+              icon={<IconMapPin className="size-4" />}
+              wrapperClassName="mt-2"
+              className={
                 error ? "border-red-300 focus:border-red-400 focus:ring-red-100" : ""
-              }`}
+              }
             />
             {error ? (
               <p id="client-lookup-error" className="mt-2 text-sm text-red-600">
                 {error}
               </p>
-            ) : (
-              <p id="client-lookup-hint" className="mt-2 text-center text-xs text-zinc-500">
-                Demo dati: K-12345, K-67890, K-11111 vai atbilstoša adrese
-              </p>
-            )}
+            ) : null}
           </div>
 
-          <TooltipIconButton
-            tooltip="Turpināt uz skaitītāju rādījumu ievadi"
-            icon={<IconArrowRight />}
-            variant="primary"
+          <ActionButton
             type="submit"
-            className="w-full !px-3 !py-3"
-          />
+            variant="primary"
+            className="w-full !py-3"
+            loading={pendingAction === "submit"}
+            disabled={pendingAction !== null}
+            icon={<IconArrowRight />}
+          >
+            Turpināt
+          </ActionButton>
         </form>
       </div>
 

@@ -1,6 +1,6 @@
 ---
 description: Admin demo UI — modāļi, pogas, tabulas, datumi, apstiprinājumi
-globs: app/components/admin/**,app/components/ui/confirm-close-dialog.tsx,app/components/ui/use-modal-keyboard.ts,app/components/ui/tooltip-button.tsx,app/lib/format-date.ts
+globs: app/components/admin/**,app/components/ui/confirm-close-dialog.tsx,app/components/ui/use-modal-keyboard.ts,app/components/ui/tooltip-button.tsx,app/components/ui/icon-input.tsx,app/lib/format-date.ts
 alwaysApply: true
 ---
 
@@ -18,7 +18,8 @@ Attiecas uz **`app/components/admin/`** un saistītajiem UI helperiem. Jauni ekr
 
 | Vieta | Stils |
 |-------|--------|
-| Galvene, formu pogas (Pievienot, Saglabāt, Atcelt) | Ikona + **teksts**, **bez** tooltip |
+| Galvene, formu pogas (Pievienot, Saglabāt, Atcelt) | Ikona + **teksts**, **bez** tooltip; **`ActionButton`** ar spinner (`button-action-loading.mdc`) |
+| Modāļa kāja — Noņemt / dzēst | `dangerButtonClassName` (sarkanīgs fons, `hover:bg-red-100`) |
 | Tabulu darbības | Tikai ikona + tooltip (`TooltipIconButton`) |
 | Modāļa aizvērt (X) | Tikai ikona, tooltip „Aizvērt”, `tooltipPlacement="bottom"` |
 | Noņemt no saraksta modālī | `IconX`, tooltip „Noņemt”, `variant="danger"` |
@@ -28,6 +29,8 @@ Attiecas uz **`app/components/admin/`** un saistītajiem UI helperiem. Jauni ekr
 
 - Galvene (`h3`, X) **ārpus** `overflow-y-auto`; saturs un kājas atsevišķi.
 - Hint/tooltip netiek apgriezti — neritināt galveni kopā ar saturu.
+- **Kāja:** `modalFooterClassName` — pogas **labajā** pusē (`justify-end`).
+- **Secība:** **Atcelt** → **Noņemt** (ja ir, `dangerButtonClassName`) → **Saglabāt** (`primaryButtonClassName`).
 
 ## Modāļu tastatūra
 
@@ -41,9 +44,16 @@ Visi admin formu modāļi lieto **`useModalKeyboard`** + **`ConfirmCloseDialog`*
 
 **Apstiprinājuma dialogi** (`ConfirmCloseDialog`): dzēšana, noņemšana, aizvēršana ar nesaglabātām izmaiņām.
 
-- **ENTER** → apstiprina (`confirmLabel`, bieži „Dzēst” / „Noņemt” ar `confirmVariant="danger"`).
-- **ESC** → atceļ.
+- Kāja labajā: **Atcelt** → apstiprinājums (`confirmLabel`; bīstamām darbībām `confirmVariant="danger"`).
+- **ENTER** → apstiprina; **ESC** → atceļ.
 - Tabulu dzēšanai obligāts modālis pirms `deleteClient` / `deleteMeter`.
+
+## Lauki (input)
+
+- Teksta lauki: **`IconInput`** (`app/components/ui/icon-input.tsx`) — kreisā ikona + **placeholder**.
+- Paroles: **`PasswordInput`** — `IconLock` + rādīt/paslēpt (acu ikona).
+- `<select>`: **`IconSelect`** ar atbilstošu ikonu.
+- ❌ Tukši `<input>` bez ikonas/placeholder, ja formā jau ir līdzīgs lauks.
 
 ## Hinti / izvēle formās
 
@@ -73,8 +83,9 @@ Kolonnas: **Numurs**, **Klients**, **Darbības** (bez atsevišķām Veids / Viet
 
 - **Numurs**: treknraksts; zem tā `text-sm text-zinc-500` — veids, tad verifikācijas datums.
 - **Klients**: adrese treknrakstā; zem tā numurs; zem numura — vieta (`text-sm text-zinc-500`).
+- Tukša tabula: **`TableEmptyRow`** (`app/components/ui/table-empty-row.tsx`) ar skaidru ziņu, nevis tukšu `tbody`.
 
 ## Galvenie faili
 
 - Modāļi: `client-form-modal`, `client-meters-modal`, `meter-form-modal`, `meter-address-modal`
-- Kopīgie: `confirm-close-dialog.tsx`, `use-modal-keyboard.ts`, `tooltip-button.tsx`, `form-styles.ts`
+- Kopīgie: `confirm-close-dialog.tsx`, `use-modal-keyboard.ts`, `tooltip-button.tsx`, `action-button.tsx`, `icon-input.tsx`, `form-styles.ts`

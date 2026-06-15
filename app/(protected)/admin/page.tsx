@@ -1,13 +1,12 @@
 import { AdminPanel } from "@/app/components/admin/admin-panel";
-import { SectionPage } from "@/app/components/section-page";
+import { getAdminAccess } from "@/app/lib/auth/get-admin-access";
 
-export default function AdminPage() {
-  return (
-    <SectionPage
-      title="Administrācija"
-      subtitle="Demo panelis klientiem, skaitītājiem, rādījumiem un iestatījumiem"
-    >
-      <AdminPanel />
-    </SectionPage>
-  );
+export default async function AdminPage() {
+  const access = await getAdminAccess();
+
+  if (access.status !== "authenticated") {
+    return null;
+  }
+
+  return <AdminPanel admin={access.admin} />;
 }
