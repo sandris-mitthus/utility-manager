@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.14` (see [Changelog](#changelog))
+**Current version:** `1.0.15` (see [Changelog](#changelog))
 
 ---
 
@@ -26,7 +26,7 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 ### Rādījumu nodošana (2 veidi)
 
 1. **Web** — klients meklē adresi/numuru, aizpilda formu (`POST /api/public/submissions`)
-2. **E-pasts** — admin/cron ievāc nelasītos e-pastus (IMAP), parsē tekstu (Limbažu formāti), piesaista skaitītājiem un **automātiski pievieno** sadaļai „Rādījumi” (`readings_submissions`). Abi veidi dalās vienu mēneša ierakstu — pēc importa web forma rāda „jau iesniegti” līdz nākamajam kalendārajam mēnesim.
+2. **E-pasts** — admin (vai ārējs scheduler) ievāc nelasītos e-pastus (IMAP), parsē tekstu (Limbažu formāti), piesaista skaitītājiem un **automātiski pievieno** sadaļai „Rādījumi” (`readings_submissions`). Abi veidi dalās vienu mēneša ierakstu — pēc importa web forma rāda „jau iesniegti” līdz nākamajam kalendārajam mēnesim.
 
 ### Data
 
@@ -111,7 +111,7 @@ Copy `.env.example` → `.env.local` and fill in **real** values locally. Never 
 | `CONTACT_IMAP_HOST` | IMAP | Server only; ja nav, mēģina `imap.` no `CONTACT_SMTP_HOST` |
 | `CONTACT_IMAP_PORT` | IMAP | Noklus. `993` |
 | `CONTACT_IMAP_USER` | IMAP | Noklus. kontaktu e-pasts no `contact_settings` |
-| `CRON_SECRET` | Cron | Vercel stundas `GET /api/cron/fetch-emails` (`Authorization: Bearer …`) |
+| `CRON_SECRET` | IMAP scheduler (nav obligāts) | Aizsargā `GET /api/cron/fetch-emails` (`Authorization: Bearer …`); izmanto ārēju cron (ne Vercel) vai izlaid, ja ievāc tikai adminā |
 
 ### Supabase setup
 
@@ -178,6 +178,12 @@ Plūsma: **push uz `main`** → paralēli **GitHub Actions** (`gitleaks`, `npm-a
 
 Run `npm run db:migrate` from your machine against the production Supabase DB when you add new migrations.
 
+**E-pasta ievākšana:** nav `vercel.json` cron — Vercel Hobby/limits bieži met kļūdu. Ievāciet manuāli admin **E-pasts** cilnē vai iestatiet ārēju scheduler (piem. servera cron, Uptime Robot), kas periodiski izsauc:
+
+```bash
+curl -sS -H "Authorization: Bearer $CRON_SECRET" "https://your-app.vercel.app/api/cron/fetch-emails"
+```
+
 ---
 
 ## Extending the starter
@@ -202,7 +208,7 @@ app/
 ├── api/
 │   ├── admin/               # settings, clients, meters, email/inbox (auth + CSRF)
 │   ├── cron/
-│   │   └── fetch-emails/    # GET — stundas IMAP + imports (CRON_SECRET)
+│   │   └── fetch-emails/    # GET — IMAP + imports (CRON_SECRET; ārējs scheduler)
 │   └── public/
 │       ├── lookup/          # GET — klienta meklēšana serverī
 │       └── submissions/     # POST — rādījumi (signed token, rate limit)
@@ -265,6 +271,10 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.15
+
+- **Deploy** — noņemts `vercel.json` cron (Vercel kļūdas); e-pasta ievākšana adminā vai caur ārēju scheduler uz `/api/cron/fetch-emails`
 
 ### v1.0.14
 

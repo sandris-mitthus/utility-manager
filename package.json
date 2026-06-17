@@ -1,6 +1,6 @@
 {
   "name": "utility-manager",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "private": true,
   "scripts": {
     "dev": "node --max-http-header-size=65536 ./node_modules/next/dist/bin/next dev -p 3001",
