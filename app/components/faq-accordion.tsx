@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { CopyableTextBlock } from "@/app/components/copyable-text-block";
 import { IconChevronDown } from "@/app/components/ui/icons";
 
 export type FaqItem = {
   id: string;
   question: string;
-  answer: string;
+  answer: ReactNode;
   copyTemplate?: string;
   copyLabel?: string;
 };

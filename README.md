@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.13` (see [Changelog](#changelog))
+**Current version:** `1.0.14` (see [Changelog](#changelog))
 
 ---
 
@@ -18,7 +18,7 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 
 ### Starter UI
 
-- **Sākums** (`/`) — klienta meklēšana (`GET /api/public/lookup`) un rādījumu iesniegšana ar signed token; ja šī mēneša rādījumi jau ir (web vai e-pasts), rāda „Rādījumi jau iesniegti”; FAQ kontakti bez paroles
+- **Sākums** (`/`) — klienta meklēšana (`GET /api/public/lookup`) un rādījumu iesniegšana ar signed token; ja šī mēneša rādījumi jau ir (web vai e-pasts), rāda „Rādījumi jau iesniegti”; FAQ kontakti (tālrunis, SMS, WhatsApp, e-pasts) treknrakstā
 - **Administrācija** (`/admin`) — klienti, skaitītāji, iesniegtie rādījumi, **e-pasta rādījumi** (IMAP, parsēšana, automātisks imports), kontaktu iestatījumi; CSRF + rate limit admin API
 - **App nav** — app name from `app_settings.app_name` (fallback: “Utility Manager”)
 - **SectionPage** layout helper for new screens
@@ -265,6 +265,10 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.14
+
+- **FAQ** — tālruņa numuri, SMS, WhatsApp un e-pasta adrese atbildēs treknrakstā (`faq-items.ts`, `faq-accordion.tsx`)
 
 ### v1.0.13
 

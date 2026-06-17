@@ -1,3 +1,4 @@
+import { createElement, Fragment, type ReactNode } from "react";
 import type { FaqItem } from "@/app/components/faq-accordion";
 import type { PublicContactSettings } from "@/app/lib/utility/types";
 
@@ -8,6 +9,14 @@ Kanalizācija: KANALIZĀCIJAS RĀDĪJUMI`;
 
 function trimmed(value: string) {
   return value.trim();
+}
+
+function boldContact(value: string): ReactNode {
+  return createElement("strong", { className: "font-semibold text-zinc-900" }, value);
+}
+
+function contactAnswer(before: string, contact: string, after: string): ReactNode {
+  return createElement(Fragment, null, before, boldContact(contact), after);
 }
 
 export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
@@ -32,14 +41,22 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
       id: "phone-call",
       question: "Uz kādu numuru jāzvana, lai iesniegtu rādījumus?",
       answer: phoneNumber
-        ? `Zvaniet uz ${phoneNumber}. Operatori pieņems rādījumus pa tālruni.`
+        ? contactAnswer(
+            "Zvaniet uz ",
+            phoneNumber,
+            ". Operatori pieņems rādījumus pa tālruni.",
+          )
         : "Tālruņa numurs vēl nav norādīts. Sazinieties ar administratoru.",
     },
     {
       id: "sms",
       question: "Uz kādu numuru varu sūtīt SMS, lai nodotu rādījumus?",
       answer: smsNumber
-        ? `Sūtiet SMS uz ${smsNumber}. Ziņojumā norādiet klienta numuru un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.`
+        ? contactAnswer(
+            "Sūtiet SMS uz ",
+            smsNumber,
+            ". Ziņojumā norādiet klienta numuru un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.",
+          )
         : "SMS numurs vēl nav norādīts. Sazinieties ar administratoru.",
       copyTemplate: smsNumber ? READING_SUBMISSION_TEMPLATE : undefined,
       copyLabel: "Ieteicamais SMS teksts",
@@ -48,7 +65,11 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
       id: "whatsapp",
       question: "Uz kādu numuru WhatsApp varu sūtīt rādījumus?",
       answer: whatsappNumber
-        ? `WhatsApp ziņas sūtiet uz ${whatsappNumber}. Pievienojiet klienta numuru un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.`
+        ? contactAnswer(
+            "WhatsApp ziņas sūtiet uz ",
+            whatsappNumber,
+            ". Pievienojiet klienta numuru un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.",
+          )
         : "WhatsApp numurs vēl nav norādīts. Sazinieties ar administratoru.",
       copyTemplate: whatsappNumber ? READING_SUBMISSION_TEMPLATE : undefined,
       copyLabel: "Ieteicamais WhatsApp teksts",
@@ -57,7 +78,11 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
       id: "email",
       question: "Uz kādu e-pastu jāsūta e-pasts, lai iesniegtu rādījumus?",
       answer: email
-        ? `Rādījumus var iesniegt e-pastā: ${email}. Zemāk ir teksts, ko varat nokopēt un aizpildīt ar saviem rādījumiem.`
+        ? contactAnswer(
+            "Rādījumus var iesniegt e-pastā: ",
+            email,
+            ". Zemāk ir teksts, ko varat nokopēt un aizpildīt ar saviem rādījumiem.",
+          )
         : "E-pasta adrese vēl nav norādīta. Sazinieties ar administratoru.",
       copyTemplate: email ? READING_SUBMISSION_TEMPLATE : undefined,
       copyLabel: "Ieteicamais e-pasta teksts",
