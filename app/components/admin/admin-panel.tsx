@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AdminEmailTab } from "@/app/components/admin/admin-email-tab";
 import { AdminClientsTab } from "@/app/components/admin/admin-clients-tab";
 import { AdminMetersTab } from "@/app/components/admin/admin-meters-tab";
 import { AdminSettingsTab } from "@/app/components/admin/admin-settings-tab";
@@ -10,15 +11,18 @@ import {
   IconChart,
   IconGauge,
   IconLogOut,
+  IconMail,
   IconSettings,
   IconUsers,
 } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { signOutAdmin } from "@/app/lib/auth/sign-out-admin";
 import type { AdminUser } from "@/app/lib/auth/admin-types";
+import type { EmailFetchState, EmailInboxMessage } from "@/app/lib/utility/types";
 
 const ADMIN_TABS = [
   { id: "submissions", label: "Rādījumi", icon: <IconChart /> },
+  { id: "email", label: "E-pasts", icon: <IconMail /> },
   { id: "clients", label: "Klienti", icon: <IconUsers /> },
   { id: "meters", label: "Skaitītāji", icon: <IconGauge /> },
   { id: "settings", label: "Iestatījumi", icon: <IconSettings /> },
@@ -28,14 +32,20 @@ type AdminTabId = (typeof ADMIN_TABS)[number]["id"];
 
 type AdminPanelProps = {
   admin: AdminUser;
+  initialEmailInbox: {
+    messages: EmailInboxMessage[];
+    fetchState: EmailFetchState;
+  } | null;
 };
 
-export function AdminPanel({ admin }: AdminPanelProps) {
+export function AdminPanel({ admin, initialEmailInbox }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<AdminTabId>("submissions");
   const [signingOut, setSigningOut] = useState(false);
 
   const content = useMemo(() => {
     switch (activeTab) {
+      case "email":
+        return <AdminEmailTab initialInbox={initialEmailInbox} />;
       case "clients":
         return <AdminClientsTab />;
       case "meters":
@@ -46,7 +56,7 @@ export function AdminPanel({ admin }: AdminPanelProps) {
       default:
         return <AdminSubmissionsTab />;
     }
-  }, [activeTab]);
+  }, [activeTab, initialEmailInbox]);
 
   async function handleSignOut() {
     setSigningOut(true);

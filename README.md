@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.12` (see [Changelog](#changelog))
+**Current version:** `1.0.13` (see [Changelog](#changelog))
 
 ---
 
@@ -18,16 +18,22 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 
 ### Starter UI
 
-- **Sākums** (`/`) — klienta meklēšana (`GET /api/public/lookup`) un rādījumu iesniegšana ar signed token; FAQ kontakti bez paroles
-- **Administrācija** (`/admin`) — klienti, skaitītāji, iesniegtie rādījumi, kontaktu iestatījumi; CSRF + rate limit admin API
+- **Sākums** (`/`) — klienta meklēšana (`GET /api/public/lookup`) un rādījumu iesniegšana ar signed token; ja šī mēneša rādījumi jau ir (web vai e-pasts), rāda „Rādījumi jau iesniegti”; FAQ kontakti bez paroles
+- **Administrācija** (`/admin`) — klienti, skaitītāji, iesniegtie rādījumi, **e-pasta rādījumi** (IMAP, parsēšana, automātisks imports), kontaktu iestatījumi; CSRF + rate limit admin API
 - **App nav** — app name from `app_settings.app_name` (fallback: “Utility Manager”)
 - **SectionPage** layout helper for new screens
+
+### Rādījumu nodošana (2 veidi)
+
+1. **Web** — klients meklē adresi/numuru, aizpilda formu (`POST /api/public/submissions`)
+2. **E-pasts** — admin/cron ievāc nelasītos e-pastus (IMAP), parsē tekstu (Limbažu formāti), piesaista skaitītājiem un **automātiski pievieno** sadaļai „Rādījumi” (`readings_submissions`). Abi veidi dalās vienu mēneša ierakstu — pēc importa web forma rāda „jau iesniegti” līdz nākamajam kalendārajam mēnesim.
 
 ### Data
 
 - **Supabase** (Postgres) when env is configured
 - **`app_settings`** singleton (`id = 1`) — `app_name` for branding in nav and home subtitle
-- **`readings_submissions`**, **`admin_audit_log`** — publiskie iesniegumi un admin audit (`008`)
+- **`email_inbox_messages`**, **`email_fetch_state`** — IMAP ievākšana, parsēšana, importa statuss (`010`, `012`)
+- **`contact_settings.email_password`**, **`imap_host`** — admin IMAP/SMTP (`011`); ENV rezerves variants
 - **`meters.baseline_reading`** — skaitītāja rādījums uz skaitītāja; netiek pārrakstīts pēc iesniegšanas (`009`); patēriņš adminā
 - **`contact_settings`**, **`clients`**, **`meters`** — admin CRUD (migrācijas `005`, `006` sākuma dati)
 - **`admin_users`** — administratoru e-pasta whitelist (`002`–`004`)
@@ -101,7 +107,11 @@ Copy `.env.example` → `.env.local` and fill in **real** values locally. Never 
 | `CONTACT_SMTP_HOST` | SMTP | Server only; paziņojums pēc web iesniegšanas |
 | `CONTACT_SMTP_PORT` | SMTP | Noklus. `587` |
 | `CONTACT_SMTP_USER` | SMTP | Noklus. kontaktu e-pasts |
-| `CONTACT_EMAIL_PASSWORD` | SMTP | Server only; SMTP parole |
+| `CONTACT_EMAIL_PASSWORD` | SMTP / IMAP | Server only; SMTP un IMAP parole |
+| `CONTACT_IMAP_HOST` | IMAP | Server only; ja nav, mēģina `imap.` no `CONTACT_SMTP_HOST` |
+| `CONTACT_IMAP_PORT` | IMAP | Noklus. `993` |
+| `CONTACT_IMAP_USER` | IMAP | Noklus. kontaktu e-pasts no `contact_settings` |
+| `CRON_SECRET` | Cron | Vercel stundas `GET /api/cron/fetch-emails` (`Authorization: Bearer …`) |
 
 ### Supabase setup
 
@@ -123,7 +133,7 @@ npm run db:test
 
 **Service role:** glabājiet `SUPABASE_SERVICE_ROLE_KEY` tikai servera ENV (Vercel). Pēc iespējamā noplūdes incidenta — rotējiet atslēgu Supabase Dashboard → API un atjauniniet deploy ENV.
 
-**Schema:** `supabase/migrations/` — `001`–`009`; `schema_migrations` (auto-managed by migrate script). Pēc `009` obligāti `npm run db:migrate`.
+**Schema:** `supabase/migrations/` — `001`–`012`; `schema_migrations` (auto-managed by migrate script). Pēc jaunas migrācijas obligāti `npm run db:migrate`.
 
 ---
 
@@ -190,7 +200,9 @@ app/
 │       ├── layout.tsx       # Admin auth gate + AdminDataProvider
 │       └── page.tsx         # AdminPanel
 ├── api/
-│   ├── admin/               # settings, clients, meters (auth + CSRF)
+│   ├── admin/               # settings, clients, meters, email/inbox (auth + CSRF)
+│   ├── cron/
+│   │   └── fetch-emails/    # GET — stundas IMAP + imports (CRON_SECRET)
 │   └── public/
 │       ├── lookup/          # GET — klienta meklēšana serverī
 │       └── submissions/     # POST — rādījumi (signed token, rate limit)
@@ -198,7 +210,7 @@ app/
 │   ├── callback/
 │   └── auth-code-error/
 ├── components/
-│   ├── admin/               # tabs, modals, admin-login-gate
+│   ├── admin/               # tabs, modals, admin-email-tab, admin-login-gate
 │   ├── admin-data-provider.tsx
 │   ├── public-data-provider.tsx
 │   ├── contract-lookup-panel.tsx, meter-reading-form.tsx, faq-accordion.tsx
@@ -206,12 +218,12 @@ app/
 └── lib/
     ├── auth/
     ├── security/            # rate-limit, admin-api CSRF, audit-log, lookup-token
-    ├── utility/             # types, repository, schemas, faq-items, contact-email
+    ├── utility/             # repository, parse-meter-email, match/import, fetch-contact-inbox, …
     ├── format-date.ts
     ├── settings/
     └── supabase/
 proxy.ts
-scripts/                     # db:migrate, db:reload-schema, db:seed-admin, db:test
+scripts/                     # db:migrate, db:seed-admin, db:test, test-parse-meter-email, …
 security-check.md            # drošības audits, atzīme, ieteikumi, CI apraksts
 supabase/migrations/
 .cursor/rules/
@@ -253,6 +265,12 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.13
+
+- **E-pasta rādījumi** — IMAP tikai nelasītie; pēc ievākšanas atzīmē kā izlasītus; parsētājs Limbažu formātiem (t.sk. `1234=155-123`); piesaiste skaitītājiem pēc iepriekšējā rādījuma
+- **Automātisks imports** — veiksmīgi parsēti e-pasti nonāk `readings_submissions` (apvienošana, ja mēnesis jau ir); admin birka „Pievienots nodotajiem rādījumiem”; migrācija `012`
+- **Admin e-pasts** — IMAP parole un serveris Iestatījumos (`011`); cilne ar ievākšanu, pārparsēšanu un dzēšanu; stundas cron
 
 ### v1.0.12
 

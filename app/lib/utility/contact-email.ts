@@ -1,4 +1,5 @@
 import { isContactEmailTransportConfigured } from "@/app/lib/utility/email-password";
+import { loadContactEmailCredentials } from "@/app/lib/utility/contact-settings-credentials";
 
 type SubmissionNotificationInput = {
   to: string;
@@ -23,13 +24,22 @@ export { isContactEmailTransportConfigured };
 export async function sendSubmissionNotificationEmail(
   input: SubmissionNotificationInput,
 ): Promise<void> {
-  if (!isContactEmailTransportConfigured()) {
+  const host = process.env.CONTACT_SMTP_HOST?.trim();
+  if (!host) {
     return;
   }
 
-  const host = process.env.CONTACT_SMTP_HOST?.trim();
-  const password = process.env.CONTACT_EMAIL_PASSWORD?.trim();
-  if (!host || !password) {
+  let password = process.env.CONTACT_EMAIL_PASSWORD?.trim() || "";
+  if (!password) {
+    try {
+      const credentials = await loadContactEmailCredentials();
+      password = credentials.password ?? "";
+    } catch {
+      return;
+    }
+  }
+
+  if (!password) {
     return;
   }
 

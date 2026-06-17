@@ -16,6 +16,7 @@ import {
 import { adminMutationHeaders } from "@/app/lib/security/admin-api";
 import type {
   AdminContactSettings,
+  ContactSettingsUpdate,
   UtilityClient,
   UtilityMeter,
   UtilityState,
@@ -24,8 +25,9 @@ import { todayIsoDate } from "@/app/lib/format-date";
 
 type AdminDataContextValue = {
   state: UtilityState;
+  reloadState: () => Promise<void>;
   updateSettings: (
-    settings: AdminContactSettings,
+    settings: ContactSettingsUpdate,
   ) => Promise<{ ok: true } | { ok: false; message: string }>;
   saveClient: (client: UtilityClient) => Promise<{ ok: true } | { ok: false; message: string }>;
   deleteClient: (clientId: string) => Promise<{ ok: true } | { ok: false; message: string }>;
@@ -78,7 +80,21 @@ export function AdminDataProvider({ children, initialState }: AdminDataProviderP
     [state],
   );
 
-  const updateSettings = useCallback(async (settings: AdminContactSettings) => {
+  const reloadState = useCallback(async () => {
+    const response = await fetch("/api/admin/data", {
+      headers: adminMutationHeaders(),
+    });
+    const json = (await response.json()) as {
+      success?: boolean;
+      data?: UtilityState;
+    };
+
+    if (response.ok && json.success && json.data) {
+      setState(json.data);
+    }
+  }, []);
+
+  const updateSettings = useCallback(async (settings: ContactSettingsUpdate) => {
     const response = await fetch("/api/admin/settings", {
       method: "PATCH",
       headers: adminMutationHeaders(),
@@ -87,6 +103,8 @@ export function AdminDataProvider({ children, initialState }: AdminDataProviderP
         smsNumber: settings.smsNumber,
         whatsappNumber: settings.whatsappNumber,
         phoneNumber: settings.phoneNumber,
+        imapHost: settings.imapHost,
+        emailPassword: settings.emailPassword,
       }),
     });
 
@@ -197,6 +215,7 @@ export function AdminDataProvider({ children, initialState }: AdminDataProviderP
   const value = useMemo(
     () => ({
       state,
+      reloadState,
       updateSettings,
       saveClient,
       deleteClient,
@@ -208,6 +227,7 @@ export function AdminDataProvider({ children, initialState }: AdminDataProviderP
     }),
     [
       state,
+      reloadState,
       updateSettings,
       saveClient,
       deleteClient,

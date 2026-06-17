@@ -1,8 +1,10 @@
 import { createAdminClient } from "@/app/lib/supabase/admin";
 import { isSupabaseAdminConfigured } from "@/app/lib/supabase/env";
 import { isContactEmailTransportConfigured } from "@/app/lib/utility/email-password";
+import { isContactInboxConfigured } from "@/app/lib/utility/imap-config";
 import type {
   AdminContactSettings,
+  ContactSettingsUpdate,
   MeterType,
   PublicContactSettings,
   PublicLookupResult,
@@ -36,6 +38,8 @@ type ContactSettingsRow = {
   sms_number: string;
   whatsapp_number: string;
   phone_number: string;
+  imap_host?: string;
+  email_password?: string;
 };
 
 type SubmissionRow = {
@@ -108,7 +112,13 @@ function mapPublicSettings(row: ContactSettingsRow): PublicContactSettings {
 function mapAdminSettings(row: ContactSettingsRow): AdminContactSettings {
   return {
     ...mapPublicSettings(row),
-    emailPasswordConfigured: isContactEmailTransportConfigured(),
+    imapHost: row.imap_host?.trim() ?? "",
+    emailPasswordConfigured: isContactEmailTransportConfigured() || Boolean(row.email_password?.trim()),
+    emailInboxConfigured: isContactInboxConfigured(
+      row.email,
+      row.imap_host ?? "",
+      row.email_password,
+    ),
   };
 }
 
@@ -204,7 +214,7 @@ async function loadCoreData(supabase: ReturnType<typeof createAdminClient>) {
   const [settingsResult, clientsResult, submissionsResult] = await Promise.all([
     supabase
       .from("contact_settings")
-      .select("email, sms_number, whatsapp_number, phone_number")
+      .select("email, sms_number, whatsapp_number, phone_number, imap_host, email_password")
       .eq("id", 1)
       .maybeSingle(),
     supabase.from("clients").select("id, client_number, address").order("client_number"),
@@ -407,19 +417,29 @@ export async function loadUtilityAdminState(): Promise<UtilityState> {
 }
 
 export async function updateContactSettings(
-  settings: PublicContactSettings,
+  settings: ContactSettingsUpdate,
 ): Promise<AdminContactSettings> {
   const supabase = createAdminClient();
+  const updatePayload: Record<string, string> = {
+    email: settings.email,
+    sms_number: settings.smsNumber,
+    whatsapp_number: settings.whatsappNumber,
+    phone_number: settings.phoneNumber,
+  };
+
+  if (settings.imapHost !== undefined) {
+    updatePayload.imap_host = settings.imapHost.trim();
+  }
+
+  if (settings.emailPassword?.trim()) {
+    updatePayload.email_password = settings.emailPassword.trim();
+  }
+
   const { data, error } = await supabase
     .from("contact_settings")
-    .update({
-      email: settings.email,
-      sms_number: settings.smsNumber,
-      whatsapp_number: settings.whatsappNumber,
-      phone_number: settings.phoneNumber,
-    })
+    .update(updatePayload)
     .eq("id", 1)
-    .select("email, sms_number, whatsapp_number, phone_number")
+    .select("email, sms_number, whatsapp_number, phone_number, imap_host, email_password")
     .single();
 
   if (error || !data) {
@@ -476,6 +496,80 @@ export async function submitReadingsInDb(
       throw new Error(meterError.message);
     }
   }
+}
+
+export async function upsertEmailReadingsInDb(
+  clientId: string,
+  month: string,
+  readings: Record<string, number>,
+  previousReadings: Record<string, number>,
+): Promise<"created" | "merged"> {
+  const supabase = createAdminClient();
+
+  const { data: existing, error: existingError } = await supabase
+    .from("readings_submissions")
+    .select("id, readings")
+    .eq("client_id", clientId)
+    .eq("month", month)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  if (existing) {
+    const raw =
+      typeof existing.readings === "string"
+        ? (JSON.parse(existing.readings) as StoredSubmissionReadings)
+        : existing.readings;
+    const currentValues = isWrappedSubmissionReadings(raw) ? raw.values : (raw as Record<string, number>);
+    const currentPrevious = isWrappedSubmissionReadings(raw) ? raw.previous : {};
+
+    const mergedValues = { ...currentValues, ...readings };
+    const mergedPrevious = { ...currentPrevious, ...previousReadings };
+
+    const { error: updateError } = await supabase
+      .from("readings_submissions")
+      .update({
+        readings: {
+          values: mergedValues,
+          previous: mergedPrevious,
+        },
+        submitted_at: new Date().toISOString(),
+      })
+      .eq("id", existing.id);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+  } else {
+    const { error: insertError } = await supabase.from("readings_submissions").insert({
+      client_id: clientId,
+      month,
+      readings: {
+        values: readings,
+        previous: previousReadings,
+      },
+    });
+
+    if (insertError) {
+      throw new Error(insertError.message);
+    }
+  }
+
+  for (const [meterId, reading] of Object.entries(readings)) {
+    const { error: meterError } = await supabase
+      .from("meters")
+      .update({ previous_reading: reading })
+      .eq("id", meterId)
+      .eq("client_id", clientId);
+
+    if (meterError) {
+      throw new Error(meterError.message);
+    }
+  }
+
+  return existing ? "merged" : "created";
 }
 
 export async function upsertClient(client: UtilityClient): Promise<UtilityClient> {

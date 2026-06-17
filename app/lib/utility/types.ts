@@ -34,7 +34,61 @@ export type PublicContactSettings = {
 };
 
 export type AdminContactSettings = PublicContactSettings & {
+  imapHost: string;
   emailPasswordConfigured: boolean;
+  emailInboxConfigured: boolean;
+};
+
+export type ContactSettingsUpdate = PublicContactSettings & {
+  imapHost?: string;
+  emailPassword?: string;
+};
+
+export type ParsedEmailReading = {
+  label?: string;
+  meterNumber?: string;
+  previousValue?: number;
+  currentValue: number;
+};
+
+export type ParsedMeterEmail = {
+  clientNumber?: string;
+  addressHint?: string;
+  readings: ParsedEmailReading[];
+  warnings: string[];
+  confidence: "high" | "medium" | "low";
+  /** Parsētāja versija — vecie ieraksti tiek pārparsēti, ja mazāka par pašreizējo. */
+  parseVersion?: number;
+};
+
+export type EmailInboxMessage = {
+  id: string;
+  imapUid: number;
+  messageId: string | null;
+  fromAddress: string;
+  subject: string;
+  bodyText: string;
+  receivedAt: string | null;
+  parsed: ParsedMeterEmail;
+  parseStatus: "pending" | "parsed" | "partial" | "failed";
+  fetchedAt: string;
+  submissionImportedAt: string | null;
+  submissionMonth: string | null;
+  submissionClientId: string | null;
+  submissionImportError: string;
+};
+
+export type EmailFetchState = {
+  lastImapUid: number;
+  lastFetchAt: string | null;
+  lastFetchStatus: string;
+  lastError: string;
+};
+
+export type EmailFetchSummary = {
+  fetchedCount: number;
+  newCount: number;
+  parseStatusCounts: Record<string, number>;
 };
 
 export type UtilityState = {
