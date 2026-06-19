@@ -27,7 +27,7 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 
 1. **Web** — klients meklē adresi/numuru, aizpilda formu (`POST /api/public/submissions`)
 2. **E-pasts** — admin (vai ārējs scheduler) ievāc nelasītos e-pastus (IMAP), parsē tekstu (Limbažu formāti), piesaista skaitītājiem un **automātiski pievieno** sadaļai „Rādījumi” (`readings_submissions`). Abi veidi dalās vienu mēneša ierakstu — pēc importa web forma rāda „jau iesniegti” līdz nākamajam kalendārajam mēnesim.
-3. **Google Sheets** — ja serverī ir service account ENV, katram mēnesim automātiski tiek izveidots savs Spreadsheet fails; katram klientam ir viena rinda, un e-pasta apvienošana atjaunina esošo klienta rindu.
+3. **Google Sheets** — ja serverī ir Google OAuth ENV (ieteicams) vai service account fallback, katram mēnesim automātiski tiek izveidots savs Spreadsheet fails; katram klientam ir viena rinda, un e-pasta apvienošana atjaunina esošo klienta rindu.
 
 ### Data
 
@@ -141,6 +141,42 @@ npm run db:test
 **Service role:** glabājiet `SUPABASE_SERVICE_ROLE_KEY` tikai servera ENV (Vercel). Pēc iespējamā noplūdes incidenta — rotējiet atslēgu Supabase Dashboard → API un atjauniniet deploy ENV.
 
 **Google Sheets:** ieteicamais production variants ir Google OAuth refresh token (`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`), jo mēneša Spreadsheet faili tiek veidoti lietotāja Google Drive kvotā. Service account (`GOOGLE_SERVICE_ACCOUNT_EMAIL` + `GOOGLE_PRIVATE_KEY` vai `GOOGLE_SERVICE_ACCOUNT_JSON`) paliek kā fallback, bet parastā My Drive mapē tas nevar izveidot jaunus failus, ja service accountam nav Drive krātuves kvotas. Ja lieto konkrētu Drive mapi, iestati `GOOGLE_SHEETS_FOLDER_ID`. Bez Google ENV rādījumi saglabājas tikai Supabase. Lokālos service account JSON failus glabā ārpus Git; `.gitignore` ignorē `utility-manager-*.json`.
+
+### Local Google Sheets setup
+
+Lokālai Google Sheets sinhronizācijai `.env.local` vajag OAuth datus:
+
+```env
+GOOGLE_OAUTH_CLIENT_ID=<Google OAuth client id>
+GOOGLE_OAUTH_CLIENT_SECRET=<Google OAuth client secret>
+GOOGLE_OAUTH_REFRESH_TOKEN=<Google OAuth refresh token>
+GOOGLE_SHEETS_FOLDER_ID=<Google Drive folder id>
+```
+
+`GOOGLE_SHEETS_FOLDER_ID` ir tikai mapes ID daļa no Drive URL. Piemēram, no `https://drive.google.com/drive/folders/<folder-id>?usp=drive_link` jāņem tikai `<folder-id>`.
+
+Refresh token iegūšana:
+
+1. Atver [Google OAuth Playground](https://developers.google.com/oauthplayground)
+2. Zobratiņā ieslēdz **Use your own OAuth credentials**
+3. Ievadi `GOOGLE_OAUTH_CLIENT_ID` un `GOOGLE_OAUTH_CLIENT_SECRET`
+4. Autorizē scopes:
+
+```text
+https://www.googleapis.com/auth/spreadsheets
+https://www.googleapis.com/auth/drive
+```
+
+5. Nospied **Exchange authorization code for tokens**
+6. Nokopē `refresh_token` uz `.env.local` kā `GOOGLE_OAUTH_REFRESH_TOKEN`
+
+Pēc `.env.local` izmaiņām obligāti pārstartē dev serveri, jo Next.js servera ENV tiek nolasīti startā:
+
+```bash
+npm run dev
+```
+
+Ja Google OAuth app ir **Testing** režīmā, refresh token var beigties pēc aptuveni 7 dienām. Ilgākam production lietojumam publicē OAuth app vai atjauno tokenu, kad Google sāk atgriezt `invalid_grant`.
 
 **Schema:** `supabase/migrations/` — `001`–`013`; `schema_migrations` (auto-managed by migrate script). Pēc jaunas migrācijas obligāti `npm run db:migrate`.
 
