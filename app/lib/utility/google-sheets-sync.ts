@@ -33,6 +33,17 @@ type GoogleServiceAccountCredentials = {
   private_key: string;
 };
 
+type GoogleOAuthCredentials = {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+};
+
+type GoogleClients = {
+  sheets: ReturnType<typeof google.sheets>;
+  drive: ReturnType<typeof google.drive>;
+};
+
 export type GoogleSheetSubmission = {
   month: string;
   submittedAt?: string;
@@ -71,15 +82,41 @@ function getServiceAccountCredentials(): GoogleServiceAccountCredentials | null 
   };
 }
 
+function getOAuthCredentials(): GoogleOAuthCredentials | null {
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim();
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN?.trim();
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    return null;
+  }
+
+  return { clientId, clientSecret, refreshToken };
+}
+
 export function isGoogleSheetsSyncConfigured(): boolean {
   if (process.env.GOOGLE_SHEETS_ENABLED === "false") {
     return false;
   }
 
-  return Boolean(getServiceAccountCredentials());
+  return Boolean(getOAuthCredentials() || getServiceAccountCredentials());
 }
 
-function getGoogleClients() {
+function getGoogleClients(): GoogleClients | null {
+  const oauthCredentials = getOAuthCredentials();
+  if (oauthCredentials) {
+    const auth = new google.auth.OAuth2(
+      oauthCredentials.clientId,
+      oauthCredentials.clientSecret,
+    );
+    auth.setCredentials({ refresh_token: oauthCredentials.refreshToken });
+
+    return {
+      sheets: google.sheets({ version: "v4", auth }),
+      drive: google.drive({ version: "v3", auth }),
+    };
+  }
+
   const credentials = getServiceAccountCredentials();
   if (!credentials) {
     return null;
@@ -90,7 +127,7 @@ function getGoogleClients() {
     key: credentials.private_key,
     scopes: [
       "https://www.googleapis.com/auth/spreadsheets",
-      "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/drive",
     ],
   });
 
@@ -98,6 +135,20 @@ function getGoogleClients() {
     sheets: google.sheets({ version: "v4", auth }),
     drive: google.drive({ version: "v3", auth }),
   };
+}
+
+function isGoogleStorageQuotaError(error: unknown): boolean {
+  const candidate = error as {
+    code?: number;
+    response?: { data?: { error?: { errors?: Array<{ reason?: string }> } } };
+  };
+
+  return (
+    candidate.code === 403 &&
+    (candidate.response?.data?.error?.errors ?? []).some(
+      (item) => item.reason === "storageQuotaExceeded",
+    )
+  );
 }
 
 function monthSheetTitle(month: string): string {
@@ -168,50 +219,87 @@ async function createMonthSpreadsheet(month: string): Promise<GoogleSheetMonthRo
     throw new Error("Google Sheets nav konfigurēts.");
   }
 
-  const createResponse = await clients.sheets.spreadsheets.create({
-    requestBody: {
-      properties: {
-        title: monthSheetTitle(month),
-      },
-      sheets: [
-        {
-          properties: {
-            title: SHEET_TITLE,
-          },
+  try {
+    const title = monthSheetTitle(month);
+    const folderId = process.env.GOOGLE_SHEETS_FOLDER_ID?.trim();
+    let spreadsheetId: string | null | undefined;
+    let spreadsheetUrl: string | null | undefined;
+
+    if (folderId) {
+      const createResponse = await clients.drive.files.create({
+        requestBody: {
+          name: title,
+          mimeType: "application/vnd.google-apps.spreadsheet",
+          parents: [folderId],
         },
-      ],
-    },
-  });
+        fields: "id, webViewLink",
+        supportsAllDrives: true,
+      });
+      spreadsheetId = createResponse.data.id;
+      spreadsheetUrl = createResponse.data.webViewLink;
 
-  const spreadsheetId = createResponse.data.spreadsheetId;
-  if (!spreadsheetId) {
-    throw new Error("Google Sheets neatgrieza faila ID.");
-  }
+      if (spreadsheetId) {
+        await clients.sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                updateSheetProperties: {
+                  properties: { sheetId: 0, title: SHEET_TITLE },
+                  fields: "title",
+                },
+              },
+            ],
+          },
+        });
+      }
+    } else {
+      const createResponse = await clients.sheets.spreadsheets.create({
+        requestBody: {
+          properties: {
+            title,
+          },
+          sheets: [
+            {
+              properties: {
+                title: SHEET_TITLE,
+              },
+            },
+          ],
+        },
+      });
+      spreadsheetId = createResponse.data.spreadsheetId;
+      spreadsheetUrl = createResponse.data.spreadsheetUrl;
+    }
 
-  await clients.sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `${quoteSheetName(SHEET_TITLE)}!A1:H1`,
-    valueInputOption: "RAW",
-    requestBody: {
-      values: [[...HEADER_ROW]],
-    },
-  });
+    if (!spreadsheetId) {
+      throw new Error("Google Sheets neatgrieza faila ID.");
+    }
 
-  const folderId = process.env.GOOGLE_SHEETS_FOLDER_ID?.trim();
-  if (folderId) {
-    await clients.drive.files.update({
-      fileId: spreadsheetId,
-      addParents: folderId,
-      fields: "id, parents",
+    await clients.sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${quoteSheetName(SHEET_TITLE)}!A1:H1`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [[...HEADER_ROW]],
+      },
     });
-  }
 
-  return {
-    month,
-    spreadsheet_id: spreadsheetId,
-    spreadsheet_url: createResponse.data.spreadsheetUrl ?? sheetUrl(spreadsheetId),
-    sheet_title: SHEET_TITLE,
-  };
+    return {
+      month,
+      spreadsheet_id: spreadsheetId,
+      spreadsheet_url: spreadsheetUrl ?? sheetUrl(spreadsheetId),
+      sheet_title: SHEET_TITLE,
+    };
+  } catch (error) {
+    if (isGoogleStorageQuotaError(error)) {
+      throw new Error(
+        "Google service account nevar izveidot Drive failu, jo tam nav Drive krātuves kvotas. Iestatiet GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET un GOOGLE_OAUTH_REFRESH_TOKEN, lai failus veidotu ar Google lietotāja kontu.",
+      );
+    }
+
+    throw error;
+  }
 }
 
 async function getOrCreateMonthSheet(
