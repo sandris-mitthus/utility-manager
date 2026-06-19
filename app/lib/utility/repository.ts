@@ -15,6 +15,11 @@ import type {
 } from "@/app/lib/utility/types";
 import { createLookupSubmissionToken } from "@/app/lib/security/lookup-token";
 import { findClientByLookup, getCurrentMonthKey } from "@/app/lib/utility/helpers";
+import {
+  isGoogleSheetsSyncConfigured,
+  syncSubmissionToGoogleSheet,
+  syncSubmissionToGoogleSheetSafely,
+} from "@/app/lib/utility/google-sheets-sync";
 
 type ClientRow = {
   id: string;
@@ -47,6 +52,11 @@ type SubmissionRow = {
   month: string;
   submitted_at: string;
   readings: Record<string, number> | string;
+};
+
+export type GoogleSheetMonthSyncSummary = {
+  syncedCount: number;
+  spreadsheetUrl: string | null;
 };
 
 const METER_COLUMNS_BASE =
@@ -208,6 +218,59 @@ function mapSubmission(row: SubmissionRow): UtilitySubmission {
     submittedAt: row.submitted_at,
     readings: raw as Record<string, number>,
   };
+}
+
+async function syncReadingsSubmissionToGoogleSheet(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  month: string,
+  readings: Record<string, number>,
+  previousReadings: Record<string, number>,
+  submittedAt: string,
+): Promise<void> {
+  if (!isGoogleSheetsSyncConfigured()) {
+    return;
+  }
+
+  try {
+    const [clientResult, meterRows] = await Promise.all([
+      supabase
+        .from("clients")
+        .select("id, client_number, address")
+        .eq("id", clientId)
+        .maybeSingle(),
+      queryMeterRows(supabase, async (columns) =>
+        supabase.from("meters").select(columns).eq("client_id", clientId),
+      ),
+    ]);
+
+    if (clientResult.error) {
+      throw new Error(clientResult.error.message);
+    }
+
+    if (!clientResult.data) {
+      throw new Error("Klients nav atrasts Google Sheets sinhronizācijai.");
+    }
+
+    const meters = meterRows.map(mapMeter);
+    const clientRow = clientResult.data as ClientRow;
+
+    await syncSubmissionToGoogleSheetSafely(supabase, {
+      month,
+      submittedAt,
+      client: {
+        id: clientRow.id,
+        clientNumber: clientRow.client_number,
+        address: clientRow.address,
+        meterIds: meters.map((meter) => meter.id),
+      },
+      meters,
+      readings,
+      previousReadings,
+    });
+  } catch (error) {
+    console.error("Google Sheets submission preparation failed:", error);
+  }
 }
 
 async function loadCoreData(supabase: ReturnType<typeof createAdminClient>) {
@@ -416,6 +479,43 @@ export async function loadUtilityAdminState(): Promise<UtilityState> {
   };
 }
 
+export async function syncGoogleSheetMonthInDb(month: string): Promise<GoogleSheetMonthSyncSummary> {
+  if (!isGoogleSheetsSyncConfigured()) {
+    throw new Error("Google Sheets nav konfigurēts servera vidē.");
+  }
+
+  const supabase = createAdminClient();
+  const { clients, meters, submissions } = await loadCoreData(supabase);
+  const monthSubmissions = submissions.filter((submission) => submission.month === month);
+  let spreadsheetUrl: string | null = null;
+
+  for (const submission of monthSubmissions) {
+    const client = clients.find((item) => item.id === submission.clientId);
+    if (!client) {
+      continue;
+    }
+
+    const clientMeters = meters.filter((meter) => meter.clientId === client.id);
+    const result = await syncSubmissionToGoogleSheet(supabase, {
+      month: submission.month,
+      submittedAt: submission.submittedAt,
+      client,
+      meters: clientMeters,
+      readings: submission.readings,
+      previousReadings: submission.previousReadings ?? {},
+    });
+
+    if (result?.spreadsheetUrl) {
+      spreadsheetUrl = result.spreadsheetUrl;
+    }
+  }
+
+  return {
+    syncedCount: monthSubmissions.length,
+    spreadsheetUrl,
+  };
+}
+
 export async function updateContactSettings(
   settings: ContactSettingsUpdate,
 ): Promise<AdminContactSettings> {
@@ -456,6 +556,7 @@ export async function submitReadingsInDb(
   previousReadings: Record<string, number>,
 ): Promise<void> {
   const supabase = createAdminClient();
+  const submittedAt = new Date().toISOString();
 
   const { data: existing, error: existingError } = await supabase
     .from("readings_submissions")
@@ -475,6 +576,7 @@ export async function submitReadingsInDb(
   const { error: insertError } = await supabase.from("readings_submissions").insert({
     client_id: clientId,
     month,
+    submitted_at: submittedAt,
     readings: {
       values: readings,
       previous: previousReadings,
@@ -496,6 +598,15 @@ export async function submitReadingsInDb(
       throw new Error(meterError.message);
     }
   }
+
+  await syncReadingsSubmissionToGoogleSheet(
+    supabase,
+    clientId,
+    month,
+    readings,
+    previousReadings,
+    submittedAt,
+  );
 }
 
 export async function upsertEmailReadingsInDb(
@@ -505,6 +616,9 @@ export async function upsertEmailReadingsInDb(
   previousReadings: Record<string, number>,
 ): Promise<"created" | "merged"> {
   const supabase = createAdminClient();
+  const submittedAt = new Date().toISOString();
+  let sheetReadings = readings;
+  let sheetPreviousReadings = previousReadings;
 
   const { data: existing, error: existingError } = await supabase
     .from("readings_submissions")
@@ -527,6 +641,8 @@ export async function upsertEmailReadingsInDb(
 
     const mergedValues = { ...currentValues, ...readings };
     const mergedPrevious = { ...currentPrevious, ...previousReadings };
+    sheetReadings = mergedValues;
+    sheetPreviousReadings = mergedPrevious;
 
     const { error: updateError } = await supabase
       .from("readings_submissions")
@@ -535,7 +651,7 @@ export async function upsertEmailReadingsInDb(
           values: mergedValues,
           previous: mergedPrevious,
         },
-        submitted_at: new Date().toISOString(),
+        submitted_at: submittedAt,
       })
       .eq("id", existing.id);
 
@@ -546,6 +662,7 @@ export async function upsertEmailReadingsInDb(
     const { error: insertError } = await supabase.from("readings_submissions").insert({
       client_id: clientId,
       month,
+      submitted_at: submittedAt,
       readings: {
         values: readings,
         previous: previousReadings,
@@ -568,6 +685,15 @@ export async function upsertEmailReadingsInDb(
       throw new Error(meterError.message);
     }
   }
+
+  await syncReadingsSubmissionToGoogleSheet(
+    supabase,
+    clientId,
+    month,
+    sheetReadings,
+    sheetPreviousReadings,
+    submittedAt,
+  );
 
   return existing ? "merged" : "created";
 }

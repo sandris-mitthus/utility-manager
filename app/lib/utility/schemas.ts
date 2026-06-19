@@ -38,6 +38,10 @@ export const syncClientMetersSchema = z.object({
   meterIds: z.array(z.string().uuid()),
 });
 
+export const googleSheetMonthSyncSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+});
+
 export const attachMeterClientSchema = z.object({
   clientId: z.string().uuid().nullable(),
 });

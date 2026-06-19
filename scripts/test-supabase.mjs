@@ -53,6 +53,7 @@ for (const table of [
   "clients",
   "meters",
   "readings_submissions",
+  "google_sheet_months",
   "admin_audit_log",
 ]) {
   const { error } = await serviceClient.from(table).select("*", { count: "exact", head: true });

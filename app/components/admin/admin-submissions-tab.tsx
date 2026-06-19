@@ -2,13 +2,20 @@
 
 import { useMemo, useState } from "react";
 import { useAdminData } from "@/app/components/admin-data-provider";
+import { ActionButton } from "@/app/components/ui/action-button";
+import {
+  FeedbackToast,
+  type FeedbackToastVariant,
+} from "@/app/components/ui/feedback-toast";
 import {
   cardClassName,
   secondaryButtonClassName,
   statusBadgeClassName,
   tableClassName,
 } from "@/app/components/ui/form-styles";
-import { IconAngleLeft, IconHome } from "@/app/components/ui/icons";
+import { IconAngleLeft, IconHome, IconRefresh } from "@/app/components/ui/icons";
+import { adminMutationHeaders } from "@/app/lib/security/admin-api";
+import { runPendingAction } from "@/app/lib/run-pending-action";
 import {
   calculateConsumption,
   formatMonthLabel,
@@ -20,10 +27,26 @@ import {
 } from "@/app/lib/utility/helpers";
 import { formatDateTimeDisplay } from "@/app/lib/format-date";
 
+type FeedbackState = {
+  message: string;
+  variant: FeedbackToastVariant;
+};
+
+type GoogleSheetSyncResponse = {
+  success: boolean;
+  message?: string;
+  data?: {
+    syncedCount: number;
+    spreadsheetUrl: string | null;
+  };
+};
+
 export function AdminSubmissionsTab() {
   const { state, hasSubmission } = useAdminData();
   const currentMonth = getCurrentMonthKey();
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [pendingAction, setPendingAction] = useState<"google-sheet" | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const previousMonthKey = shiftMonthKey(selectedMonth, -1);
   const previousMonthLabel = formatMonthNameNominative(previousMonthKey);
   const isCurrentMonth = selectedMonth === currentMonth;
@@ -47,9 +70,43 @@ export function AdminSubmissionsTab() {
 
   const submittedRows = rows.filter((row) => row.submitted);
   const pendingRows = rows.filter((row) => !row.submitted);
+  const isBusy = pendingAction !== null;
+
+  async function handleSyncGoogleSheet() {
+    await runPendingAction("google-sheet", setPendingAction, async () => {
+      const response = await fetch("/api/admin/submissions/google-sheet", {
+        method: "POST",
+        headers: adminMutationHeaders(),
+        body: JSON.stringify({ month: selectedMonth }),
+      });
+      const json = (await response.json()) as GoogleSheetSyncResponse;
+
+      if (!response.ok || !json.success || !json.data) {
+        setFeedback({
+          message: json.message || "Neizdevās atjaunot Google Sheet.",
+          variant: "error",
+        });
+        return;
+      }
+
+      const suffix = json.data.spreadsheetUrl ? ` Fails: ${json.data.spreadsheetUrl}` : "";
+      setFeedback({
+        message: `Google Sheet atjaunots: ${json.data.syncedCount} ieraksti.${suffix}`,
+        variant: "success",
+      });
+    });
+  }
 
   return (
-    <div className="space-y-6">
+    <>
+      {feedback ? (
+        <FeedbackToast
+          message={feedback.message}
+          variant={feedback.variant}
+          onDismiss={() => setFeedback(null)}
+        />
+      ) : null}
+      <div className="space-y-6">
       <div className={`${cardClassName} flex flex-wrap items-center justify-between gap-3`}>
         <div>
           <h2 className="text-base font-semibold text-zinc-900">Iesniegtie rādījumi</h2>
@@ -59,9 +116,20 @@ export function AdminSubmissionsTab() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ActionButton
+            type="button"
+            variant="secondary"
+            icon={<IconRefresh />}
+            loading={pendingAction === "google-sheet"}
+            disabled={isBusy || submittedRows.length === 0}
+            onClick={handleSyncGoogleSheet}
+          >
+            Atjaunot Google Sheet
+          </ActionButton>
           <button
             type="button"
             className={secondaryButtonClassName}
+            disabled={isBusy}
             onClick={() => setSelectedMonth(previousMonthKey)}
           >
             <IconAngleLeft />
@@ -71,6 +139,7 @@ export function AdminSubmissionsTab() {
             <button
               type="button"
               className={secondaryButtonClassName}
+              disabled={isBusy}
               onClick={() => setSelectedMonth(currentMonth)}
             >
               <IconHome />
@@ -103,6 +172,7 @@ export function AdminSubmissionsTab() {
         </>
       )}
     </div>
+    </>
   );
 }
 

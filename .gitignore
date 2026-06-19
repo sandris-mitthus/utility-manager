@@ -7,5 +7,6 @@ dist/
 !.env.example
 *.log
 *.docx
+utility-manager-*.json
 .DS_Store
 next-env.d.ts

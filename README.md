@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.15` (see [Changelog](#changelog))
+**Current version:** `1.0.16` (see [Changelog](#changelog))
 
 ---
 
@@ -27,11 +27,13 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 
 1. **Web** — klients meklē adresi/numuru, aizpilda formu (`POST /api/public/submissions`)
 2. **E-pasts** — admin (vai ārējs scheduler) ievāc nelasītos e-pastus (IMAP), parsē tekstu (Limbažu formāti), piesaista skaitītājiem un **automātiski pievieno** sadaļai „Rādījumi” (`readings_submissions`). Abi veidi dalās vienu mēneša ierakstu — pēc importa web forma rāda „jau iesniegti” līdz nākamajam kalendārajam mēnesim.
+3. **Google Sheets** — ja serverī ir service account ENV, katram mēnesim automātiski tiek izveidots savs Spreadsheet fails; katram klientam ir viena rinda, un e-pasta apvienošana atjaunina esošo klienta rindu.
 
 ### Data
 
 - **Supabase** (Postgres) when env is configured
 - **`app_settings`** singleton (`id = 1`) — `app_name` for branding in nav and home subtitle
+- **`google_sheet_months`** — mēneša `YYYY-MM` kartējums uz automātiski izveidoto Google Spreadsheet (`013`)
 - **`email_inbox_messages`**, **`email_fetch_state`** — IMAP ievākšana, parsēšana, importa statuss (`010`, `012`)
 - **`contact_settings.email_password`**, **`imap_host`** — admin IMAP/SMTP (`011`); ENV rezerves variants
 - **`meters.baseline_reading`** — skaitītāja rādījums uz skaitītāja; netiek pārrakstīts pēc iesniegšanas (`009`); patēriņš adminā
@@ -112,6 +114,10 @@ Copy `.env.example` → `.env.local` and fill in **real** values locally. Never 
 | `CONTACT_IMAP_PORT` | IMAP | Noklus. `993` |
 | `CONTACT_IMAP_USER` | IMAP | Noklus. kontaktu e-pasts no `contact_settings` |
 | `CRON_SECRET` | IMAP scheduler (nav obligāts) | Aizsargā `GET /api/cron/fetch-emails` (`Authorization: Bearer …`); izmanto ārēju cron (ne Vercel) vai izlaid, ja ievāc tikai adminā |
+| `GOOGLE_SHEETS_ENABLED` | Google Sheets | `false` izslēdz sinhronizāciju arī tad, ja credentials ir iestatīti |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` + `GOOGLE_PRIVATE_KEY` | Google Sheets | Service account credentials; privātajā atslēgā `\n` paliek kā escaped rindas |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google Sheets | Alternatīva atsevišķiem email/private key ENV |
+| `GOOGLE_SHEETS_FOLDER_ID` | Google Sheets | Neobligāta Drive mape mēneša Spreadsheet failiem; mape jāpadalās ar service account |
 
 ### Supabase setup
 
@@ -133,7 +139,9 @@ npm run db:test
 
 **Service role:** glabājiet `SUPABASE_SERVICE_ROLE_KEY` tikai servera ENV (Vercel). Pēc iespējamā noplūdes incidenta — rotējiet atslēgu Supabase Dashboard → API un atjauniniet deploy ENV.
 
-**Schema:** `supabase/migrations/` — `001`–`012`; `schema_migrations` (auto-managed by migrate script). Pēc jaunas migrācijas obligāti `npm run db:migrate`.
+**Google Sheets:** izveido Google Cloud service account ar Sheets API un Drive API piekļuvi, servera ENV pievieno `GOOGLE_SERVICE_ACCOUNT_EMAIL` + `GOOGLE_PRIVATE_KEY` (vai `GOOGLE_SERVICE_ACCOUNT_JSON`) un, ja lieto konkrētu Drive mapi, padalies ar service account e-pastu un iestati `GOOGLE_SHEETS_FOLDER_ID`. Bez šiem ENV rādījumi saglabājas tikai Supabase. Lokālos service account JSON failus glabā ārpus Git; `.gitignore` ignorē `utility-manager-*.json`.
+
+**Schema:** `supabase/migrations/` — `001`–`013`; `schema_migrations` (auto-managed by migrate script). Pēc jaunas migrācijas obligāti `npm run db:migrate`.
 
 ---
 
@@ -170,6 +178,8 @@ Plūsma: **push uz `main`** → paralēli **GitHub Actions** (`gitleaks`, `npm-a
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key |
 | `NEXT_PUBLIC_SITE_URL` | `https://your-app.vercel.app` |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY` or `GOOGLE_SERVICE_ACCOUNT_JSON` | Optional Google Sheets sync |
+| `GOOGLE_SHEETS_FOLDER_ID` | Optional Drive folder for monthly spreadsheets |
 
 4. Deploy
 5. In Supabase → Authentication → URL Configuration, add production redirect:
@@ -177,6 +187,16 @@ Plūsma: **push uz `main`** → paralēli **GitHub Actions** (`gitleaks`, `npm-a
    - Redirect: `https://your-app.vercel.app/auth/callback`
 
 Run `npm run db:migrate` from your machine against the production Supabase DB when you add new migrations.
+
+**Google Sheets production ENV:** Vercel → Project → Settings → Environment Variables. Ieteicamais variants production:
+
+```env
+GOOGLE_SHEETS_ENABLED=true
+GOOGLE_SERVICE_ACCOUNT_JSON=<full service account JSON content>
+GOOGLE_SHEETS_FOLDER_ID=<Google Drive folder id>
+```
+
+Pēc ENV saglabāšanas palaid Vercel **Redeploy**, lai servera funkcijas ielasa jaunos mainīgos. Drive mapei jābūt kopīgotai ar service account e-pastu kā **Editor**. Admin sadaļā **Rādījumi** poga **Atjaunot Google Sheet** manuāli sinhronizē izvēlēto mēnesi; jaunie web/e-pasta iesniegumi sinhronizējas automātiski pēc saglabāšanas.
 
 **E-pasta ievākšana:** nav `vercel.json` cron — Vercel Hobby/limits bieži met kļūdu. Ievāciet manuāli admin **E-pasts** cilnē vai iestatiet ārēju scheduler (piem. servera cron, Uptime Robot), kas periodiski izsauc:
 
@@ -206,7 +226,7 @@ app/
 │       ├── layout.tsx       # Admin auth gate + AdminDataProvider
 │       └── page.tsx         # AdminPanel
 ├── api/
-│   ├── admin/               # settings, clients, meters, email/inbox (auth + CSRF)
+│   ├── admin/               # settings, clients, meters, email/inbox, submissions/google-sheet (auth + CSRF)
 │   ├── cron/
 │   │   └── fetch-emails/    # GET — IMAP + imports (CRON_SECRET; ārējs scheduler)
 │   └── public/
@@ -224,7 +244,7 @@ app/
 └── lib/
     ├── auth/
     ├── security/            # rate-limit, admin-api CSRF, audit-log, lookup-token
-    ├── utility/             # repository, parse-meter-email, match/import, fetch-contact-inbox, …
+    ├── utility/             # repository, google-sheets-sync, parse-meter-email, match/import, …
     ├── format-date.ts
     ├── settings/
     └── supabase/
@@ -271,6 +291,11 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.16
+
+- **Google Sheets** — automātiski mēneša Spreadsheet faili rādījumiem; viena rinda uz klientu, e-pasta merge atjaunina esošo rindu; admin poga manuāli atjauno izvēlēto mēnesi; migrācija `013`
+- **Setup** — `googleapis`, Google service account ENV un `google_sheet_months` pārbaude Supabase testā
 
 ### v1.0.15
 
