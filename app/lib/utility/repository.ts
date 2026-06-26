@@ -18,6 +18,7 @@ import { findClientByLookup, getCurrentMonthKey } from "@/app/lib/utility/helper
 import {
   isGoogleSheetsSyncConfigured,
   syncSubmissionToGoogleSheet,
+  syncSubmissionToGoogleSheetRequired,
   syncSubmissionToGoogleSheetSafely,
 } from "@/app/lib/utility/google-sheets-sync";
 
@@ -231,14 +232,22 @@ async function syncReadingsSubmissionToGoogleSheet(
     client: UtilityClient;
     meters: UtilityMeter[];
   },
+  required = false,
 ): Promise<void> {
   if (!isGoogleSheetsSyncConfigured()) {
+    if (required) {
+      throw new Error("Google Sheets nav konfigurēts servera vidē.");
+    }
     return;
   }
 
   try {
+    const syncSubmission = required
+      ? syncSubmissionToGoogleSheetRequired
+      : syncSubmissionToGoogleSheetSafely;
+
     if (validatedSubmission) {
-      await syncSubmissionToGoogleSheetSafely(supabase, {
+      await syncSubmission(supabase, {
         month,
         submittedAt,
         client: validatedSubmission.client,
@@ -271,7 +280,7 @@ async function syncReadingsSubmissionToGoogleSheet(
     const meters = meterRows.map(mapMeter);
     const clientRow = clientResult.data as ClientRow;
 
-    await syncSubmissionToGoogleSheetSafely(supabase, {
+    await syncSubmission(supabase, {
       month,
       submittedAt,
       client: {
@@ -286,6 +295,38 @@ async function syncReadingsSubmissionToGoogleSheet(
     });
   } catch (error) {
     console.error("Google Sheets submission preparation failed:", error);
+    if (required) {
+      throw error;
+    }
+  }
+}
+
+async function rollbackSubmittedReadings(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  month: string,
+  previousReadings: Record<string, number>,
+): Promise<void> {
+  const { error: deleteError } = await supabase
+    .from("readings_submissions")
+    .delete()
+    .eq("client_id", clientId)
+    .eq("month", month);
+
+  if (deleteError) {
+    throw new Error(deleteError.message);
+  }
+
+  for (const [meterId, reading] of Object.entries(previousReadings)) {
+    const { error: meterError } = await supabase
+      .from("meters")
+      .update({ previous_reading: reading })
+      .eq("id", meterId)
+      .eq("client_id", clientId);
+
+    if (meterError) {
+      throw new Error(meterError.message);
+    }
   }
 }
 
@@ -574,6 +615,7 @@ export async function submitReadingsInDb(
     client: UtilityClient;
     meters: UtilityMeter[];
   },
+  requireGoogleSheetSync = false,
 ): Promise<void> {
   const supabase = createAdminClient();
   const submittedAt = new Date().toISOString();
@@ -607,27 +649,39 @@ export async function submitReadingsInDb(
     throw new Error(insertError.message);
   }
 
-  for (const [meterId, reading] of Object.entries(readings)) {
-    const { error: meterError } = await supabase
-      .from("meters")
-      .update({ previous_reading: reading })
-      .eq("id", meterId)
-      .eq("client_id", clientId);
+  try {
+    for (const [meterId, reading] of Object.entries(readings)) {
+      const { error: meterError } = await supabase
+        .from("meters")
+        .update({ previous_reading: reading })
+        .eq("id", meterId)
+        .eq("client_id", clientId);
 
-    if (meterError) {
-      throw new Error(meterError.message);
+      if (meterError) {
+        throw new Error(meterError.message);
+      }
     }
-  }
 
-  await syncReadingsSubmissionToGoogleSheet(
-    supabase,
-    clientId,
-    month,
-    readings,
-    previousReadings,
-    submittedAt,
-    validatedSubmission,
-  );
+    await syncReadingsSubmissionToGoogleSheet(
+      supabase,
+      clientId,
+      month,
+      readings,
+      previousReadings,
+      submittedAt,
+      validatedSubmission,
+      requireGoogleSheetSync,
+    );
+  } catch (error) {
+    if (requireGoogleSheetSync) {
+      try {
+        await rollbackSubmittedReadings(supabase, clientId, month, previousReadings);
+      } catch (rollbackError) {
+        console.error("Failed to roll back readings after Google Sheets sync failure:", rollbackError);
+      }
+    }
+    throw error;
+  }
 }
 
 export async function upsertEmailReadingsInDb(

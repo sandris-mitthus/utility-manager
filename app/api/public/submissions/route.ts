@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
         client: validation.client,
         meters: validation.meters,
       },
+      true,
     );
 
     try {

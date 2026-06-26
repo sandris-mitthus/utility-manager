@@ -419,21 +419,41 @@ export async function syncSubmissionToGoogleSheet(
   };
 }
 
-export async function syncSubmissionToGoogleSheetSafely(
+export async function syncSubmissionToGoogleSheetRequired(
   supabase: SupabaseAdminClient,
   submission: GoogleSheetSubmission,
-): Promise<GoogleSheetSyncResult | null> {
+): Promise<GoogleSheetSyncResult> {
   try {
-    return await syncSubmissionToGoogleSheet(supabase, submission);
+    const result = await syncSubmissionToGoogleSheet(supabase, submission);
+    if (result) {
+      return result;
+    }
   } catch (error) {
     console.error("Google Sheets sync failed:", error);
   }
 
   try {
     await wait(1_000);
-    return await syncSubmissionToGoogleSheet(supabase, submission);
+    const result = await syncSubmissionToGoogleSheet(supabase, submission);
+    if (result) {
+      return result;
+    }
   } catch (retryError) {
     console.error("Google Sheets sync retry failed:", retryError);
+    throw retryError;
+  }
+
+  throw new Error("Google Sheets nav konfigurēts servera vidē.");
+}
+
+export async function syncSubmissionToGoogleSheetSafely(
+  supabase: SupabaseAdminClient,
+  submission: GoogleSheetSubmission,
+): Promise<GoogleSheetSyncResult | null> {
+  try {
+    return await syncSubmissionToGoogleSheetRequired(supabase, submission);
+  } catch (error) {
+    console.error("Google Sheets sync failed after retry:", error);
     return null;
   }
 }
