@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.17` (see [Changelog](#changelog))
+**Current version:** `1.0.18` (see [Changelog](#changelog))
 
 ---
 
@@ -331,6 +331,10 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.18
+
+- **Google Sheets** — web iesniegumi sinhronizējas ar validēto klienta/skaitītāju snapshotu un automātiski mēģina vēlreiz pēc īslaicīgas Google API kļūmes
 
 ### v1.0.17
 

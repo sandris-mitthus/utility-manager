@@ -31,6 +31,10 @@ export async function POST(request: NextRequest) {
       validation.month,
       body.readings,
       Object.fromEntries(validation.meters.map((meter) => [meter.id, meter.previousReading])),
+      {
+        client: validation.client,
+        meters: validation.meters,
+      },
     );
 
     try {

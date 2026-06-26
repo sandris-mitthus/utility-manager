@@ -213,6 +213,10 @@ function buildSubmissionRow(submission: GoogleSheetSubmission): string[] {
   ];
 }
 
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function createMonthSpreadsheet(month: string): Promise<GoogleSheetMonthRow> {
   const clients = getGoogleClients();
   if (!clients) {
@@ -423,6 +427,13 @@ export async function syncSubmissionToGoogleSheetSafely(
     return await syncSubmissionToGoogleSheet(supabase, submission);
   } catch (error) {
     console.error("Google Sheets sync failed:", error);
+  }
+
+  try {
+    await wait(1_000);
+    return await syncSubmissionToGoogleSheet(supabase, submission);
+  } catch (retryError) {
+    console.error("Google Sheets sync retry failed:", retryError);
     return null;
   }
 }

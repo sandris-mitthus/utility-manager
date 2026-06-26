@@ -227,12 +227,28 @@ async function syncReadingsSubmissionToGoogleSheet(
   readings: Record<string, number>,
   previousReadings: Record<string, number>,
   submittedAt: string,
+  validatedSubmission?: {
+    client: UtilityClient;
+    meters: UtilityMeter[];
+  },
 ): Promise<void> {
   if (!isGoogleSheetsSyncConfigured()) {
     return;
   }
 
   try {
+    if (validatedSubmission) {
+      await syncSubmissionToGoogleSheetSafely(supabase, {
+        month,
+        submittedAt,
+        client: validatedSubmission.client,
+        meters: validatedSubmission.meters,
+        readings,
+        previousReadings,
+      });
+      return;
+    }
+
     const [clientResult, meterRows] = await Promise.all([
       supabase
         .from("clients")
@@ -554,6 +570,10 @@ export async function submitReadingsInDb(
   month: string,
   readings: Record<string, number>,
   previousReadings: Record<string, number>,
+  validatedSubmission?: {
+    client: UtilityClient;
+    meters: UtilityMeter[];
+  },
 ): Promise<void> {
   const supabase = createAdminClient();
   const submittedAt = new Date().toISOString();
@@ -606,6 +626,7 @@ export async function submitReadingsInDb(
     readings,
     previousReadings,
     submittedAt,
+    validatedSubmission,
   );
 }
 
