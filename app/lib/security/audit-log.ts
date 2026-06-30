@@ -26,3 +26,12 @@ export async function writeAdminAuditLog(entry: AuditLogInput): Promise<void> {
     console.error("admin_audit_log write failed:", error);
   }
 }
+
+export async function writeSystemAuditLog(
+  entry: Omit<AuditLogInput, "adminEmail">,
+): Promise<void> {
+  await writeAdminAuditLog({
+    ...entry,
+    adminEmail: "system",
+  });
+}

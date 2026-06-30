@@ -4,6 +4,23 @@ import { publicSubmissionSchema } from "@/app/lib/utility/schemas";
 import { sendSubmissionNotificationEmail } from "@/app/lib/utility/contact-email";
 import { loadPublicContactSettings, submitReadingsInDb, validatePublicSubmissionInDb } from "@/app/lib/utility/repository";
 import { checkRateLimit, getRequestIp, rateLimitResponse } from "@/app/lib/security/rate-limit";
+import { writeSystemAuditLog } from "@/app/lib/security/audit-log";
+
+function getPublicSubmissionErrorCode(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "unknown";
+  }
+
+  if (error.message.includes("Google Sheets autorizācija")) {
+    return "google_oauth_invalid";
+  }
+
+  if (error.message.includes("Google Sheets nav konfigurēts")) {
+    return "google_sheets_not_configured";
+  }
+
+  return "public_submission_sync_failed";
+}
 
 export async function POST(request: NextRequest) {
   const ip = getRequestIp(request);
@@ -26,17 +43,47 @@ export async function POST(request: NextRequest) {
       return Response.json({ success: false, message: validation.message }, { status: validation.status });
     }
 
-    await submitReadingsInDb(
-      body.clientId,
-      validation.month,
-      body.readings,
-      Object.fromEntries(validation.meters.map((meter) => [meter.id, meter.previousReading])),
-      {
-        client: validation.client,
-        meters: validation.meters,
-      },
-      true,
-    );
+    try {
+      await submitReadingsInDb(
+        body.clientId,
+        validation.month,
+        body.readings,
+        Object.fromEntries(validation.meters.map((meter) => [meter.id, meter.previousReading])),
+        {
+          client: validation.client,
+          meters: validation.meters,
+        },
+        true,
+      );
+
+      await writeSystemAuditLog({
+        action: "public_submission_created",
+        entityType: "readings_submission",
+        entityId: `${body.clientId}:${validation.month}`,
+        details: {
+          clientId: body.clientId,
+          month: validation.month,
+          meterCount: validation.meters.length,
+          source: "public_web",
+          googleSheetSync: "required_success",
+        },
+      });
+    } catch (submitError) {
+      await writeSystemAuditLog({
+        action: "public_submission_failed",
+        entityType: "readings_submission",
+        entityId: `${body.clientId}:${validation.month}`,
+        details: {
+          clientId: body.clientId,
+          month: validation.month,
+          meterCount: validation.meters.length,
+          source: "public_web",
+          stage: "required_google_sheet_sync_or_db_write",
+          errorCode: getPublicSubmissionErrorCode(submitError),
+        },
+      });
+      throw submitError;
+    }
 
     try {
       const settings = await loadPublicContactSettings();

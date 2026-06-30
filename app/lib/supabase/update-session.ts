@@ -34,6 +34,12 @@ export async function updateSession(request: NextRequest) {
   const storageKey = getSupabaseStorageKey(env.url);
   let supabaseResponse = NextResponse.next({ request });
   const { pathname } = request.nextUrl;
+  const needsSession = pathname.startsWith("/admin") || pathname.startsWith("/api/admin");
+
+  if (!needsSession) {
+    purgeForeignSupabaseCookies(request, supabaseResponse, storageKey);
+    return supabaseResponse;
+  }
 
   const supabase = createServerClient(env.url, env.anonKey, {
     cookies: {

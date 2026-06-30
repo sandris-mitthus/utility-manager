@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "";
 const isDev = process.env.NODE_ENV === "development";
 
-const scriptSrc = ["'self'", "'unsafe-inline'", isDev ? "'unsafe-eval'" : null]
+const scriptSrc = ["'self'", isDev ? "'unsafe-inline'" : null, isDev ? "'unsafe-eval'" : null]
   .filter(Boolean)
   .join(" ");
 

@@ -14,7 +14,7 @@ import type {
   UtilitySubmission,
 } from "@/app/lib/utility/types";
 import { createLookupSubmissionToken } from "@/app/lib/security/lookup-token";
-import { findClientByLookup, getCurrentMonthKey } from "@/app/lib/utility/helpers";
+import { getCurrentMonthKey, normalizeLookup } from "@/app/lib/utility/helpers";
 import {
   isGoogleSheetsSyncConfigured,
   syncSubmissionToGoogleSheet,
@@ -317,20 +317,35 @@ async function rollbackSubmittedReadings(
     throw new Error(deleteError.message);
   }
 
-  for (const [meterId, reading] of Object.entries(previousReadings)) {
-    const { error: meterError } = await supabase
-      .from("meters")
-      .update({ previous_reading: reading })
-      .eq("id", meterId)
-      .eq("client_id", clientId);
+  const rollbackResults = await Promise.all(
+    Object.entries(previousReadings).map(([meterId, reading]) =>
+      supabase
+        .from("meters")
+        .update({ previous_reading: reading })
+        .eq("id", meterId)
+        .eq("client_id", clientId),
+    ),
+  );
 
-    if (meterError) {
-      throw new Error(meterError.message);
-    }
+  const rollbackError = rollbackResults.find((result) => result.error)?.error;
+  if (rollbackError) {
+    throw new Error(rollbackError.message);
   }
 }
 
-async function loadCoreData(supabase: ReturnType<typeof createAdminClient>) {
+async function loadCoreData(
+  supabase: ReturnType<typeof createAdminClient>,
+  options: { submissionsMonth?: string } = {},
+) {
+  let submissionsQuery = supabase
+    .from("readings_submissions")
+    .select("client_id, month, submitted_at, readings")
+    .order("submitted_at", { ascending: false });
+
+  if (options.submissionsMonth) {
+    submissionsQuery = submissionsQuery.eq("month", options.submissionsMonth);
+  }
+
   const [settingsResult, clientsResult, submissionsResult] = await Promise.all([
     supabase
       .from("contact_settings")
@@ -338,10 +353,7 @@ async function loadCoreData(supabase: ReturnType<typeof createAdminClient>) {
       .eq("id", 1)
       .maybeSingle(),
     supabase.from("clients").select("id, client_number, address").order("client_number"),
-    supabase
-      .from("readings_submissions")
-      .select("client_id, month, submitted_at, readings")
-      .order("submitted_at", { ascending: false }),
+    submissionsQuery,
   ]);
 
   const meterRows = await queryMeterRows(supabase, async (columns) =>
@@ -392,45 +404,88 @@ export async function loadPublicContactSettings(): Promise<PublicContactSettings
   return mapPublicSettings(data as ContactSettingsRow);
 }
 
+function escapeIlike(value: string): string {
+  return value.replace(/[%_\\]/g, (match) => `\\${match}`);
+}
+
+async function findPublicClientRow(
+  supabase: ReturnType<typeof createAdminClient>,
+  query: string,
+): Promise<ClientRow | null> {
+  const trimmed = query.trim();
+  const normalized = normalizeLookup(query);
+  if (!trimmed || !normalized) {
+    return null;
+  }
+
+  const exactNumber = await supabase
+    .from("clients")
+    .select("id, client_number, address")
+    .eq("client_number", trimmed)
+    .maybeSingle();
+
+  if (exactNumber.error) {
+    throw new Error(exactNumber.error.message || "Lookup failed");
+  }
+
+  if (exactNumber.data) {
+    return exactNumber.data as ClientRow;
+  }
+
+  const addressPattern = `%${escapeIlike(trimmed)}%`;
+  const addressMatch = await supabase
+    .from("clients")
+    .select("id, client_number, address")
+    .ilike("address", addressPattern)
+    .order("client_number")
+    .limit(1)
+    .maybeSingle();
+
+  if (addressMatch.error) {
+    throw new Error(addressMatch.error.message || "Lookup failed");
+  }
+
+  return (addressMatch.data as ClientRow | null) ?? null;
+}
+
 export async function lookupPublicClientInDb(query: string): Promise<PublicLookupResult | null> {
   requireDb();
   const supabase = createAdminClient();
 
-  const [clientsResult, meterRows] = await Promise.all([
-    supabase.from("clients").select("id, client_number, address").order("client_number"),
-    queryMeterRows(supabase, async (columns) =>
-      supabase.from("meters").select(columns).order("number"),
-    ),
-  ]);
-
-  if (clientsResult.error) {
-    throw new Error(clientsResult.error.message || "Lookup failed");
-  }
-
-  const meters = meterRows.map(mapMeter);
-  const clients = attachMeterIds(clientsResult.data as ClientRow[], meters);
-  const client = findClientByLookup(clients, query);
-  if (!client) {
+  const clientRow = await findPublicClientRow(supabase, query);
+  if (!clientRow) {
     return null;
   }
 
-  const clientMeters = meters.filter((meter) => meter.clientId === client.id);
   const month = getCurrentMonthKey();
-  const { data: existingSubmission, error: submissionError } = await supabase
-    .from("readings_submissions")
-    .select("id")
-    .eq("client_id", client.id)
-    .eq("month", month)
-    .maybeSingle();
+  const [meterRows, submissionResult] = await Promise.all([
+    queryMeterRows(supabase, async (columns) =>
+      supabase.from("meters").select(columns).eq("client_id", clientRow.id).order("number"),
+    ),
+    supabase
+      .from("readings_submissions")
+      .select("id")
+      .eq("client_id", clientRow.id)
+      .eq("month", month)
+      .maybeSingle(),
+  ]);
 
-  if (submissionError) {
-    throw new Error(submissionError.message);
+  if (submissionResult.error) {
+    throw new Error(submissionResult.error.message);
   }
+
+  const clientMeters = meterRows.map(mapMeter);
+  const client = {
+    id: clientRow.id,
+    clientNumber: clientRow.client_number,
+    address: clientRow.address,
+    meterIds: clientMeters.map((meter) => meter.id),
+  };
 
   return {
     client,
     meters: clientMeters,
-    hasSubmissionThisMonth: Boolean(existingSubmission),
+    hasSubmissionThisMonth: Boolean(submissionResult.data),
     submissionToken: createLookupSubmissionToken(client.id),
   };
 }
@@ -453,41 +508,41 @@ export async function validatePublicSubmissionInDb(
   const supabase = createAdminClient();
   const month = getCurrentMonthKey();
 
-  const { data: clientRow, error: clientError } = await supabase
-    .from("clients")
-    .select("id, client_number, address")
-    .eq("id", clientId)
-    .maybeSingle();
+  const [clientResult, meterRows, submissionResult] = await Promise.all([
+    supabase
+      .from("clients")
+      .select("id, client_number, address")
+      .eq("id", clientId)
+      .maybeSingle(),
+    queryMeterRows(supabase, async (columns) =>
+      supabase.from("meters").select(columns).eq("client_id", clientId),
+    ),
+    supabase
+      .from("readings_submissions")
+      .select("id")
+      .eq("client_id", clientId)
+      .eq("month", month)
+      .maybeSingle(),
+  ]);
 
-  if (clientError) {
-    throw new Error(clientError.message);
+  if (clientResult.error) {
+    throw new Error(clientResult.error.message);
   }
 
-  if (!clientRow) {
+  if (!clientResult.data) {
     return { ok: false, status: 404, message: "Klients nav atrasts." };
   }
-
-  const meterRows = await queryMeterRows(supabase, async (columns) =>
-    supabase.from("meters").select(columns).eq("client_id", clientId),
-  );
 
   const meters = meterRows.map(mapMeter);
   if (meters.length === 0) {
     return { ok: false, status: 400, message: "Klientam nav piesaistītu skaitītāju." };
   }
 
-  const { data: existingSubmission, error: submissionError } = await supabase
-    .from("readings_submissions")
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("month", month)
-    .maybeSingle();
-
-  if (submissionError) {
-    throw new Error(submissionError.message);
+  if (submissionResult.error) {
+    throw new Error(submissionResult.error.message);
   }
 
-  if (existingSubmission) {
+  if (submissionResult.data) {
     return { ok: false, status: 409, message: "Rādījumi šim mēnesim jau ir iesniegti." };
   }
 
@@ -513,9 +568,9 @@ export async function validatePublicSubmissionInDb(
     ok: true,
     month,
     client: {
-      id: clientRow.id,
-      clientNumber: clientRow.client_number,
-      address: clientRow.address,
+      id: clientResult.data.id,
+      clientNumber: clientResult.data.client_number,
+      address: clientResult.data.address,
       meterIds: meters.map((meter) => meter.id),
     },
     meters,
@@ -523,10 +578,12 @@ export async function validatePublicSubmissionInDb(
   };
 }
 
-export async function loadUtilityAdminState(): Promise<UtilityState> {
+export async function loadUtilityAdminState(submissionsMonth = getCurrentMonthKey()): Promise<UtilityState> {
   requireDb();
   const supabase = createAdminClient();
-  const { clients, meters, submissions, settingsRow } = await loadCoreData(supabase);
+  const { clients, meters, submissions, settingsRow } = await loadCoreData(supabase, {
+    submissionsMonth,
+  });
 
   return {
     clients,
@@ -542,7 +599,9 @@ export async function syncGoogleSheetMonthInDb(month: string): Promise<GoogleShe
   }
 
   const supabase = createAdminClient();
-  const { clients, meters, submissions } = await loadCoreData(supabase);
+  const { clients, meters, submissions } = await loadCoreData(supabase, {
+    submissionsMonth: month,
+  });
   const monthSubmissions = submissions.filter((submission) => submission.month === month);
   let spreadsheetUrl: string | null = null;
 
@@ -650,16 +709,19 @@ export async function submitReadingsInDb(
   }
 
   try {
-    for (const [meterId, reading] of Object.entries(readings)) {
-      const { error: meterError } = await supabase
-        .from("meters")
-        .update({ previous_reading: reading })
-        .eq("id", meterId)
-        .eq("client_id", clientId);
+    const meterResults = await Promise.all(
+      Object.entries(readings).map(([meterId, reading]) =>
+        supabase
+          .from("meters")
+          .update({ previous_reading: reading })
+          .eq("id", meterId)
+          .eq("client_id", clientId),
+      ),
+    );
 
-      if (meterError) {
-        throw new Error(meterError.message);
-      }
+    const meterError = meterResults.find((result) => result.error)?.error;
+    if (meterError) {
+      throw new Error(meterError.message);
     }
 
     await syncReadingsSubmissionToGoogleSheet(

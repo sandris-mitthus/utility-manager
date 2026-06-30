@@ -1,6 +1,6 @@
 import { requireAdminApi } from "@/app/lib/auth/require-admin-api";
 import { checkRateLimit, getRequestIp, rateLimitResponse } from "@/app/lib/security/rate-limit";
-import { requireAdminMutation } from "@/app/lib/security/admin-api";
+import { requireAdminMutation } from "@/app/lib/security/admin-csrf";
 import type { AdminUser } from "@/app/lib/auth/admin-types";
 
 type Denied = { ok: false; response: Response };
@@ -21,14 +21,14 @@ export async function requireAdminRead(request: Request): Promise<Denied | Allow
 }
 
 export async function requireAdminWrite(request: Request): Promise<Denied | Allowed> {
-  const mutationDenied = requireAdminMutation(request);
-  if (mutationDenied) {
-    return { ok: false, response: mutationDenied };
-  }
-
   const auth = await requireAdminApi();
   if (!auth.ok) {
     return auth;
+  }
+
+  const mutationDenied = requireAdminMutation(request, auth.admin);
+  if (mutationDenied) {
+    return { ok: false, response: mutationDenied };
   }
 
   const ip = getRequestIp(request);

@@ -1,20 +1,8 @@
-export const ADMIN_MUTATION_HEADER = "X-Utility-Manager-Request";
-export const ADMIN_MUTATION_HEADER_VALUE = "1";
+export const ADMIN_MUTATION_HEADER = "X-Utility-Manager-CSRF";
 
-export function requireAdminMutation(request: Request): Response | null {
-  if (request.headers.get(ADMIN_MUTATION_HEADER) !== ADMIN_MUTATION_HEADER_VALUE) {
-    return Response.json(
-      { success: false, message: "Nederīgs pieprasījums." },
-      { status: 403 },
-    );
-  }
-
-  return null;
-}
-
-export function adminMutationHeaders(): HeadersInit {
+export function adminMutationHeaders(csrfToken: string): HeadersInit {
   return {
     "Content-Type": "application/json",
-    [ADMIN_MUTATION_HEADER]: ADMIN_MUTATION_HEADER_VALUE,
+    [ADMIN_MUTATION_HEADER]: csrfToken,
   };
 }

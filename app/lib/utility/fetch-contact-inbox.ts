@@ -16,7 +16,7 @@ type RawImapMessage = {
   source: Buffer;
 };
 
-const UNREAD_FETCH_LIMIT = 200;
+const DEFAULT_UNREAD_FETCH_LIMIT = 25;
 
 function formatImapError(error: unknown, credentials: ContactEmailCredentials): string {
   const base = error instanceof Error ? error.message : "Neizdevās ievākt e-pastus.";
@@ -96,7 +96,7 @@ export async function fetchContactInboxEmails(): Promise<{
       }
 
       rawMessages.push({ uid: message.uid, source: message.source });
-      if (rawMessages.length >= UNREAD_FETCH_LIMIT) {
+      if (rawMessages.length >= DEFAULT_UNREAD_FETCH_LIMIT) {
         break;
       }
     }

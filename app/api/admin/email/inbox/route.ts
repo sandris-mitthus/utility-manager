@@ -7,20 +7,19 @@ import {
   listEmailInboxMessages,
   loadEmailFetchState,
   reparseAllEmailInboxMessages,
-  reparseOutdatedEmailInboxMessages,
 } from "@/app/lib/utility/email-inbox-repository";
 import { runEmailInboxImportPipeline } from "@/app/lib/utility/import-email-inbox-submissions";
 import { deleteIdQuerySchema } from "@/app/lib/utility/schemas";
 
+const EMAIL_IMPORT_BATCH_SIZE = 10;
+
 async function loadInboxResponseData() {
-  await reparseOutdatedEmailInboxMessages(20);
-  const importSummary = await runEmailInboxImportPipeline(30);
   const [messages, fetchState] = await Promise.all([
     listEmailInboxMessages(100),
     loadEmailFetchState(),
   ]);
 
-  return { messages, fetchState, importSummary };
+  return { messages, fetchState };
 }
 
 export async function GET(request: NextRequest) {
@@ -30,14 +29,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { messages, fetchState, importSummary } = await loadInboxResponseData();
+    const { messages, fetchState } = await loadInboxResponseData();
 
     return Response.json({
       success: true,
       data: {
         messages,
         fetchState,
-        importSummary,
       },
     });
   } catch (error) {
@@ -62,7 +60,6 @@ export async function POST(request: NextRequest) {
   try {
     if (action === "reparse") {
       const reparsedCount = await reparseAllEmailInboxMessages();
-      const importSummary = await runEmailInboxImportPipeline(50);
       const messages = await listEmailInboxMessages(100);
 
       await writeAdminAuditLog({
@@ -70,13 +67,34 @@ export async function POST(request: NextRequest) {
         action: "reparse",
         entityType: "email_inbox",
         entityId: "inbox",
-        details: { reparsedCount, importSummary },
+        details: { reparsedCount },
       });
 
       return Response.json({
         success: true,
         data: {
           reparsedCount,
+          fetchState: await loadEmailFetchState(),
+          messages,
+        },
+      });
+    }
+
+    if (action === "import") {
+      const importSummary = await runEmailInboxImportPipeline(EMAIL_IMPORT_BATCH_SIZE);
+      const messages = await listEmailInboxMessages(100);
+
+      await writeAdminAuditLog({
+        adminEmail: auth.admin.email,
+        action: "import_batch",
+        entityType: "email_inbox",
+        entityId: "inbox",
+        details: { importSummary, batchSize: EMAIL_IMPORT_BATCH_SIZE },
+      });
+
+      return Response.json({
+        success: true,
+        data: {
           importSummary,
           fetchState: await loadEmailFetchState(),
           messages,
@@ -85,7 +103,6 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await fetchContactInboxEmails();
-    const importSummary = await runEmailInboxImportPipeline(50);
     const messages = await listEmailInboxMessages(100);
 
     await writeAdminAuditLog({
@@ -93,14 +110,13 @@ export async function POST(request: NextRequest) {
       action: "fetch",
       entityType: "email_inbox",
       entityId: "inbox",
-      details: { ...result.summary, importSummary },
+      details: result.summary,
     });
 
     return Response.json({
       success: true,
       data: {
         summary: result.summary,
-        importSummary,
         fetchState: await loadEmailFetchState(),
         messages,
       },

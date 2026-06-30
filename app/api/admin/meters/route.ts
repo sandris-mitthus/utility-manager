@@ -36,14 +36,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = utilityMeterSchema.parse(await request.json());
     const saved = await upsertMeter(body);
-    const state = await loadUtilityAdminState();
     await writeAdminAuditLog({
       adminEmail: auth.admin.email,
       action: "upsert",
       entityType: "meter",
       entityId: saved.id,
     });
-    return Response.json({ success: true, data: saved, state });
+    return Response.json({ success: true, data: saved });
   } catch (error) {
     return Response.json(
       {
@@ -71,14 +70,13 @@ export async function DELETE(request: NextRequest) {
 
   try {
     await deleteMeterById(parsed.data.id);
-    const state = await loadUtilityAdminState();
     await writeAdminAuditLog({
       adminEmail: auth.admin.email,
       action: "delete",
       entityType: "meter",
       entityId: parsed.data.id,
     });
-    return Response.json({ success: true, state });
+    return Response.json({ success: true, data: { id: parsed.data.id } });
   } catch (error) {
     return Response.json(
       {

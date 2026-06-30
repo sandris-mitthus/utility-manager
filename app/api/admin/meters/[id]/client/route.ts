@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdminWrite } from "@/app/lib/auth/require-admin-mutation";
 import { writeAdminAuditLog } from "@/app/lib/security/audit-log";
 import { attachMeterClientSchema } from "@/app/lib/utility/schemas";
-import { attachMeterToClientInDb, loadUtilityAdminState } from "@/app/lib/utility/repository";
+import { attachMeterToClientInDb } from "@/app/lib/utility/repository";
 
 export async function PATCH(
   request: NextRequest,
@@ -20,7 +20,6 @@ export async function PATCH(
   try {
     const body = attachMeterClientSchema.parse(await request.json());
     await attachMeterToClientInDb(meterId, body.clientId ?? null);
-    const state = await loadUtilityAdminState();
     await writeAdminAuditLog({
       adminEmail: auth.admin.email,
       action: "attach_client",
@@ -28,7 +27,10 @@ export async function PATCH(
       entityId: meterId,
       details: { clientId: body.clientId },
     });
-    return Response.json({ success: true, state });
+    return Response.json({
+      success: true,
+      data: { meterId, clientId: body.clientId ?? null },
+    });
   } catch (error) {
     return Response.json(
       {

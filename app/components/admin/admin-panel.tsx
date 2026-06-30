@@ -1,10 +1,8 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
-import { AdminEmailTab } from "@/app/components/admin/admin-email-tab";
-import { AdminClientsTab } from "@/app/components/admin/admin-clients-tab";
-import { AdminMetersTab } from "@/app/components/admin/admin-meters-tab";
-import { AdminSettingsTab } from "@/app/components/admin/admin-settings-tab";
+import { useAdminData } from "@/app/components/admin-data-provider";
 import { AdminSubmissionsTab } from "@/app/components/admin/admin-submissions-tab";
 import { tabButtonClassName } from "@/app/components/ui/form-styles";
 import {
@@ -17,8 +15,19 @@ import {
 } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { signOutAdmin } from "@/app/lib/auth/sign-out-admin";
-import type { AdminUser } from "@/app/lib/auth/admin-types";
-import type { EmailFetchState, EmailInboxMessage } from "@/app/lib/utility/types";
+
+const AdminEmailTab = dynamic(() =>
+  import("@/app/components/admin/admin-email-tab").then((module) => module.AdminEmailTab),
+);
+const AdminClientsTab = dynamic(() =>
+  import("@/app/components/admin/admin-clients-tab").then((module) => module.AdminClientsTab),
+);
+const AdminMetersTab = dynamic(() =>
+  import("@/app/components/admin/admin-meters-tab").then((module) => module.AdminMetersTab),
+);
+const AdminSettingsTab = dynamic(() =>
+  import("@/app/components/admin/admin-settings-tab").then((module) => module.AdminSettingsTab),
+);
 
 const ADMIN_TABS = [
   { id: "submissions", label: "Rādījumi", icon: <IconChart /> },
@@ -30,22 +39,15 @@ const ADMIN_TABS = [
 
 type AdminTabId = (typeof ADMIN_TABS)[number]["id"];
 
-type AdminPanelProps = {
-  admin: AdminUser;
-  initialEmailInbox: {
-    messages: EmailInboxMessage[];
-    fetchState: EmailFetchState;
-  } | null;
-};
-
-export function AdminPanel({ admin, initialEmailInbox }: AdminPanelProps) {
+export function AdminPanel() {
+  const { admin } = useAdminData();
   const [activeTab, setActiveTab] = useState<AdminTabId>("submissions");
   const [signingOut, setSigningOut] = useState(false);
 
   const content = useMemo(() => {
     switch (activeTab) {
       case "email":
-        return <AdminEmailTab initialInbox={initialEmailInbox} />;
+        return <AdminEmailTab />;
       case "clients":
         return <AdminClientsTab />;
       case "meters":
@@ -56,7 +58,7 @@ export function AdminPanel({ admin, initialEmailInbox }: AdminPanelProps) {
       default:
         return <AdminSubmissionsTab />;
     }
-  }, [activeTab, initialEmailInbox]);
+  }, [activeTab]);
 
   async function handleSignOut() {
     setSigningOut(true);

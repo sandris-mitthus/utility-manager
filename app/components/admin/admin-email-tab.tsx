@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useAdminData, findAdminClient } from "@/app/components/admin-data-provider";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAdminData } from "@/app/components/admin-data-provider";
 import {
   FeedbackToast,
   type FeedbackToastVariant,
@@ -18,7 +18,7 @@ import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { adminMutationHeaders } from "@/app/lib/security/admin-api";
 import { runPendingAction } from "@/app/lib/run-pending-action";
 import { formatDateTimeDisplay } from "@/app/lib/format-date";
-import { formatMonthLabel, formatReading } from "@/app/lib/utility/helpers";
+import { findClientByLookup, formatMonthLabel, formatReading } from "@/app/lib/utility/helpers";
 import {
   enrichParsedEmailWithClientMeters,
   formatMatchedReadingSummary,
@@ -73,23 +73,26 @@ type AdminEmailTabProps = {
   } | null;
 };
 
-export function AdminEmailTab({ initialInbox }: AdminEmailTabProps) {
-  const { state, reloadState } = useAdminData();
+export function AdminEmailTab({ initialInbox = null }: Partial<AdminEmailTabProps>) {
+  const { state, reloadState, csrfToken } = useAdminData();
   const [messages, setMessages] = useState<EmailInboxMessage[]>(initialInbox?.messages ?? []);
   const [fetchState, setFetchState] = useState<EmailFetchState | null>(
     initialInbox?.fetchState ?? null,
   );
-  const [pendingAction, setPendingAction] = useState<"fetch" | "reparse" | "delete" | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    "load" | "fetch" | "import" | "reparse" | "delete" | null
+  >(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [messageToDelete, setMessageToDelete] = useState<EmailInboxMessage | null>(null);
+  const requestedInitialLoadRef = useRef(Boolean(initialInbox));
 
   const inboxConfigured = state.settings.emailInboxConfigured;
 
   const rows = useMemo(() => {
     return messages.map((message) => {
       const lookupQuery = message.parsed.clientNumber || message.parsed.addressHint || "";
-      const matchedClient = lookupQuery ? findAdminClient(state, lookupQuery) : null;
+      const matchedClient = lookupQuery ? findClientByLookup(state.clients, lookupQuery) : null;
       const enriched = enrichParsedEmailWithClientMeters(
         message.parsed,
         matchedClient,
@@ -102,9 +105,9 @@ export function AdminEmailTab({ initialInbox }: AdminEmailTabProps) {
         enriched,
       };
     });
-  }, [messages, state]);
+  }, [messages, state.clients, state.meters]);
 
-  async function applyInboxResponse(json: InboxResponse) {
+  const applyInboxResponse = useCallback(async (json: InboxResponse) => {
     if (!json.data) {
       return;
     }
@@ -115,13 +118,85 @@ export function AdminEmailTab({ initialInbox }: AdminEmailTabProps) {
     if ((json.data.importSummary?.imported ?? 0) > 0) {
       await reloadState();
     }
+  }, [reloadState]);
+
+  useEffect(() => {
+    if (requestedInitialLoadRef.current || fetchState) {
+      return;
+    }
+
+    let ignore = false;
+    requestedInitialLoadRef.current = true;
+    void runPendingAction("load", setPendingAction, async () => {
+      const response = await fetch("/api/admin/email/inbox", {
+        headers: adminMutationHeaders(csrfToken),
+      });
+      const json = (await response.json()) as InboxResponse;
+
+      if (ignore) {
+        return;
+      }
+
+      if (!response.ok || !json.success || !json.data) {
+        setFeedback({
+          message: json.message || "Neizdevās ielādēt e-pasta datus.",
+          variant: "error",
+        });
+        return;
+      }
+
+      await applyInboxResponse(json);
+    });
+
+    return () => {
+      ignore = true;
+    };
+  }, [applyInboxResponse, csrfToken, fetchState]);
+
+  async function runImportBatch(successPrefix = "Importa batch pabeigts") {
+    let importedCount = 0;
+    let failedCount = 0;
+    let importSucceeded = false;
+
+    await runPendingAction("import", setPendingAction, async () => {
+      const response = await fetch("/api/admin/email/inbox?action=import", {
+        method: "POST",
+        headers: adminMutationHeaders(csrfToken),
+      });
+      const json = (await response.json()) as InboxResponse;
+
+      if (!response.ok || !json.success || !json.data) {
+        setFeedback({
+          message: json.message || "Neizdevās importēt e-pasta rādījumus.",
+          variant: "error",
+        });
+        return;
+      }
+
+      await applyInboxResponse(json);
+      importedCount = json.data.importSummary?.imported ?? 0;
+      failedCount = json.data.importSummary?.failed ?? 0;
+      importSucceeded = true;
+    });
+
+    if (!importSucceeded) {
+      return;
+    }
+
+    setFeedback({
+      message: `${successPrefix}: ${importedCount} pievienoti, ${failedCount} kļūdas.`,
+      variant: failedCount > 0 ? "warning" : "success",
+    });
   }
 
   async function handleFetch() {
+    let fetchedSuccessfully = false;
+    let newCount = 0;
+
     await runPendingAction("fetch", setPendingAction, async () => {
       const response = await fetch("/api/admin/email/inbox", {
         method: "POST",
-        headers: adminMutationHeaders(),
+        headers: adminMutationHeaders(csrfToken),
       });
       const json = (await response.json()) as InboxResponse;
 
@@ -135,25 +210,31 @@ export function AdminEmailTab({ initialInbox }: AdminEmailTabProps) {
 
       await applyInboxResponse(json);
 
-      const newCount = json.data.summary?.newCount ?? 0;
-      const importedCount = json.data.importSummary?.imported ?? 0;
+      newCount = json.data.summary?.newCount ?? 0;
+      fetchedSuccessfully = true;
+    });
+
+    if (fetchedSuccessfully) {
+      if (newCount > 0) {
+        await runImportBatch(`Ievākti ${newCount} jauni e-pasti, imports sadalīts mazā batch`);
+        return;
+      }
+
       setFeedback({
-        message:
-          importedCount > 0
-            ? `Ievākti ${newCount} jauni e-pasti. ${importedCount} pievienoti nodotajiem rādījumiem.`
-            : newCount > 0
-              ? `Ievākti ${newCount} jauni e-pasti.`
-              : "Jaunu e-pastu nav. Pēdējā pārbaude pabeigta.",
+        message: "Jaunu e-pastu nav. Pēdējā pārbaude pabeigta.",
         variant: "success",
       });
-    });
+    }
   }
 
   async function handleReparse() {
+    let reparsedCount = 0;
+    let reparsedSuccessfully = false;
+
     await runPendingAction("reparse", setPendingAction, async () => {
       const response = await fetch("/api/admin/email/inbox?action=reparse", {
         method: "POST",
-        headers: adminMutationHeaders(),
+        headers: adminMutationHeaders(csrfToken),
       });
       const json = (await response.json()) as InboxResponse;
 
@@ -167,15 +248,13 @@ export function AdminEmailTab({ initialInbox }: AdminEmailTabProps) {
 
       await applyInboxResponse(json);
 
-      const importedCount = json.data.importSummary?.imported ?? 0;
-      setFeedback({
-        message:
-          importedCount > 0
-            ? `Pārparsēti ${json.data.reparsedCount ?? 0} ieraksti. ${importedCount} pievienoti nodotajiem rādījumiem.`
-            : `Pārparsēti ${json.data.reparsedCount ?? 0} e-pasta ieraksti.`,
-        variant: "success",
-      });
+      reparsedCount = json.data.reparsedCount ?? 0;
+      reparsedSuccessfully = true;
     });
+
+    if (reparsedSuccessfully) {
+      await runImportBatch(`Pārparsēti ${reparsedCount} e-pasta ieraksti, imports sadalīts mazā batch`);
+    }
   }
 
   async function confirmDeleteMessage() {
@@ -188,7 +267,7 @@ export function AdminEmailTab({ initialInbox }: AdminEmailTabProps) {
         `/api/admin/email/inbox?id=${encodeURIComponent(messageToDelete.id)}`,
         {
           method: "DELETE",
-          headers: adminMutationHeaders(),
+          headers: adminMutationHeaders(csrfToken),
         },
       );
       const json = (await response.json()) as InboxResponse;
@@ -225,6 +304,16 @@ export function AdminEmailTab({ initialInbox }: AdminEmailTabProps) {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <ActionButton
+              type="button"
+              variant="secondary"
+              loading={pendingAction === "import"}
+              disabled={isBusy || messages.length === 0}
+              icon={<IconRefresh />}
+              onClick={() => void runImportBatch()}
+            >
+              Importēt nākamo batch
+            </ActionButton>
             <ActionButton
               type="button"
               variant="secondary"

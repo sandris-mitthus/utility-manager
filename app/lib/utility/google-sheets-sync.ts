@@ -151,6 +151,28 @@ function isGoogleStorageQuotaError(error: unknown): boolean {
   );
 }
 
+function isGoogleInvalidGrantError(error: unknown): boolean {
+  const candidate = error as {
+    message?: string;
+    response?: { data?: { error?: string; error_description?: string } };
+  };
+
+  return (
+    candidate.response?.data?.error === "invalid_grant" ||
+    candidate.message?.includes("invalid_grant") === true
+  );
+}
+
+function normalizeGoogleSheetsError(error: unknown): Error {
+  if (isGoogleInvalidGrantError(error)) {
+    return new Error(
+      "Google Sheets autorizācija ir beigusies. Administratoram jāatjauno Google OAuth refresh token Vercel iestatījumos.",
+    );
+  }
+
+  return error instanceof Error ? error : new Error("Neizdevās atjaunot Google Sheet.");
+}
+
 function monthSheetTitle(month: string): string {
   return `Rādījumi ${month}`;
 }
@@ -430,6 +452,9 @@ export async function syncSubmissionToGoogleSheetRequired(
     }
   } catch (error) {
     console.error("Google Sheets sync failed:", error);
+    if (isGoogleInvalidGrantError(error)) {
+      throw normalizeGoogleSheetsError(error);
+    }
   }
 
   try {
@@ -440,7 +465,7 @@ export async function syncSubmissionToGoogleSheetRequired(
     }
   } catch (retryError) {
     console.error("Google Sheets sync retry failed:", retryError);
-    throw retryError;
+    throw normalizeGoogleSheetsError(retryError);
   }
 
   throw new Error("Google Sheets nav konfigurēts servera vidē.");

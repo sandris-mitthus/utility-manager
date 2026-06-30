@@ -42,6 +42,8 @@ type MeterFormModalProps = {
   onClose: () => void;
 };
 
+const MAX_CLIENT_HINTS = 20;
+
 function clientMatchesQuery(client: UtilityClient, query: string): boolean {
   const normalized = normalizeLookup(query);
   if (!normalized) {
@@ -117,15 +119,27 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
   const { confirmCloseOpen, requestBackdropClose, dismissConfirmClose, confirmClose } =
     useModalKeyboard({ onClose, formRef, hasUnsavedChanges });
 
-  const selectedClient =
-    state.clients.find((client) => client.id === selectedClientId) ?? null;
+  const clientById = useMemo(
+    () => new Map(state.clients.map((client) => [client.id, client])),
+    [state.clients],
+  );
+  const selectedClient = selectedClientId ? clientById.get(selectedClientId) ?? null : null;
 
   const addressHints = useMemo(() => {
     if (!addressQuery.trim()) {
       return [];
     }
 
-    return state.clients.filter((client) => clientMatchesQuery(client, addressQuery));
+    const matches: UtilityClient[] = [];
+    for (const client of state.clients) {
+      if (clientMatchesQuery(client, addressQuery)) {
+        matches.push(client);
+      }
+      if (matches.length >= MAX_CLIENT_HINTS) {
+        break;
+      }
+    }
+    return matches;
   }, [addressQuery, state.clients]);
 
   useEffect(() => {
@@ -282,7 +296,7 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
                   <li className="px-3 py-2 text-sm text-zinc-500">Nav atrastu adrešu</li>
                 ) : (
                   addressHints.map((client) => (
-                    <li key={client.id} role="option">
+                    <li key={client.id} role="option" aria-selected={false}>
                       <button
                         type="button"
                         onClick={() => selectClient(client)}

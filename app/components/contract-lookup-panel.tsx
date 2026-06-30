@@ -25,6 +25,14 @@ export function ContractLookupPanel() {
 
   const [pendingAction, setPendingAction] = useState<"submit" | null>(null);
 
+  function resetLookup(clearInput = false) {
+    setLookupResult(null);
+    setError(null);
+    if (clearInput) {
+      setClientLookup("");
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -56,7 +64,8 @@ export function ContractLookupPanel() {
           meters={lookupResult.meters}
           submissionToken={lookupResult.submissionToken}
           hasSubmissionThisMonth={lookupResult.hasSubmissionThisMonth}
-          onBack={() => setLookupResult(null)}
+          onBack={() => resetLookup()}
+          onSubmissionComplete={() => resetLookup(true)}
         />
       </div>
     );

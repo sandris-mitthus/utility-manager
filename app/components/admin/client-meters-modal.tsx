@@ -25,6 +25,8 @@ type ClientMetersModalProps = {
   onClose: () => void;
 };
 
+const MAX_METER_HINTS = 20;
+
 function meterMatchesQuery(meter: UtilityMeter, query: string): boolean {
   const normalized = normalizeLookup(query);
   if (!normalized) {
@@ -70,12 +72,17 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
       hasUnsavedChanges,
     });
 
+  const meterById = useMemo(
+    () => new Map(state.meters.map((meter) => [meter.id, meter])),
+    [state.meters],
+  );
+  const attachedIdSet = useMemo(() => new Set(attachedIds), [attachedIds]);
   const attachedMeters = useMemo(
     () =>
       attachedIds
-        .map((id) => state.meters.find((meter) => meter.id === id))
+        .map((id) => meterById.get(id))
         .filter((meter): meter is UtilityMeter => Boolean(meter)),
-    [attachedIds, state.meters],
+    [attachedIds, meterById],
   );
 
   const hints = useMemo(() => {
@@ -83,10 +90,17 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
       return [];
     }
 
-    return state.meters.filter(
-      (meter) => !attachedIds.includes(meter.id) && meterMatchesQuery(meter, query),
-    );
-  }, [attachedIds, query, state.meters]);
+    const matches: UtilityMeter[] = [];
+    for (const meter of state.meters) {
+      if (!attachedIdSet.has(meter.id) && meterMatchesQuery(meter, query)) {
+        matches.push(meter);
+      }
+      if (matches.length >= MAX_METER_HINTS) {
+        break;
+      }
+    }
+    return matches;
+  }, [attachedIdSet, query, state.meters]);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -231,7 +245,7 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
                     <li className="px-3 py-2 text-sm text-zinc-500">Nav atrastu skaitītāju</li>
                   ) : (
                     hints.map((meter) => (
-                      <li key={meter.id} role="option">
+                      <li key={meter.id} role="option" aria-selected={false}>
                         <button
                           type="button"
                           onClick={() => addMeter(meter.id)}

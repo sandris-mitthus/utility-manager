@@ -33,14 +33,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = utilityClientSchema.parse(await request.json());
     const saved = await upsertClient(body);
-    const state = await loadUtilityAdminState();
     await writeAdminAuditLog({
       adminEmail: auth.admin.email,
       action: "upsert",
       entityType: "client",
       entityId: saved.id,
     });
-    return Response.json({ success: true, data: saved, state });
+    return Response.json({ success: true, data: saved });
   } catch (error) {
     return Response.json(
       {
@@ -68,14 +67,13 @@ export async function DELETE(request: NextRequest) {
 
   try {
     await deleteClientById(parsed.data.id);
-    const state = await loadUtilityAdminState();
     await writeAdminAuditLog({
       adminEmail: auth.admin.email,
       action: "delete",
       entityType: "client",
       entityId: parsed.data.id,
     });
-    return Response.json({ success: true, state });
+    return Response.json({ success: true, data: { id: parsed.data.id } });
   } catch (error) {
     return Response.json(
       {

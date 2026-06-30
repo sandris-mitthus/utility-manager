@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.19` (see [Changelog](#changelog))
+**Current version:** `1.0.20` (see [Changelog](#changelog))
 
 ---
 
@@ -46,7 +46,7 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 
 - **CSP** response headers in `next.config.ts` (Supabase `connect-src`, Google fonts)
 - Safe OAuth redirect paths (`app/lib/security/safe-redirect-path.ts`)
-- **Pilns audits:** [`security-check.md`](security-check.md) — pašreizējā atzīme **8.5/10**
+- **Pilns audits:** [`security-check.md`](security-check.md) — pašreizējā atzīme **8.8/10**
 - **CI (push):** `.github/workflows/ci.yml` — gitleaks, npm audit, typecheck, lint, build, security smoke; **production deploy tikai pēc `ci-passed`**
 
 ---
@@ -331,6 +331,12 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.20
+
+- **Public submit UX + Google Sheets** — rādījumu iesniegšanai pievienots skaidrs progress stāvoklis kritiskajai Google Sheet sinhronizācijai
+- **Admin performance** — submissions ielāde ierobežota pa mēnešiem, e-pasta fetch/import sadalīts mazākos batch darbos, un public lookup saņem trigram indeksus
+- **Drošība** — admin-bound CSRF tokens, production CSP bez inline skriptiem, strukturēti public submit audit eventi un atkārtoti atjaunots `security-check.md`
 
 ### v1.0.19
 

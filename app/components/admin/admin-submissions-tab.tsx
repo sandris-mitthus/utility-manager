@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAdminData } from "@/app/components/admin-data-provider";
 import { ActionButton } from "@/app/components/ui/action-button";
 import {
@@ -42,41 +42,85 @@ type GoogleSheetSyncResponse = {
 };
 
 export function AdminSubmissionsTab() {
-  const { state, hasSubmission } = useAdminData();
+  const { state, reloadState, csrfToken } = useAdminData();
   const currentMonth = getCurrentMonthKey();
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [loadedMonths, setLoadedMonths] = useState<Set<string>>(() => new Set([currentMonth]));
+  const [loadingMonth, setLoadingMonth] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<"google-sheet" | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const previousMonthKey = shiftMonthKey(selectedMonth, -1);
   const previousMonthLabel = formatMonthNameNominative(previousMonthKey);
   const isCurrentMonth = selectedMonth === currentMonth;
 
-  const rows = useMemo(() => {
-    return state.clients.map((client) => {
-      const submitted = hasSubmission(client.id, selectedMonth);
-      const submission = state.submissions.find(
-        (item) => item.clientId === client.id && item.month === selectedMonth,
-      );
-      const meters = state.meters.filter((meter) => meter.clientId === client.id);
+  const { rows, submittedRows, pendingRows } = useMemo(() => {
+    const submissionByClientId = new Map(
+      state.submissions
+        .filter((submission) => submission.month === selectedMonth)
+        .map((submission) => [submission.clientId, submission]),
+    );
+    const metersByClientId = new Map<string, SubmissionRow["meters"]>();
+    for (const meter of state.meters) {
+      const current = metersByClientId.get(meter.clientId) ?? [];
+      current.push(meter);
+      metersByClientId.set(meter.clientId, current);
+    }
+
+    const nextRows = state.clients.map((client) => {
+      const submission = submissionByClientId.get(client.id);
 
       return {
         client,
-        submitted,
+        submitted: Boolean(submission),
         submission,
-        meters,
+        meters: metersByClientId.get(client.id) ?? [],
       };
     });
-  }, [hasSubmission, selectedMonth, state.clients, state.meters, state.submissions]);
 
-  const submittedRows = rows.filter((row) => row.submitted);
-  const pendingRows = rows.filter((row) => !row.submitted);
+    return {
+      rows: nextRows,
+      submittedRows: nextRows.filter((row) => row.submitted),
+      pendingRows: nextRows.filter((row) => !row.submitted),
+    };
+  }, [selectedMonth, state.clients, state.meters, state.submissions]);
   const isBusy = pendingAction !== null;
+
+  useEffect(() => {
+    if (loadedMonths.has(selectedMonth)) {
+      return;
+    }
+
+    let ignore = false;
+    void reloadState(selectedMonth)
+      .then(() => {
+        if (!ignore) {
+          setLoadedMonths((current) => new Set(current).add(selectedMonth));
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoadingMonth(null);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [loadedMonths, reloadState, selectedMonth]);
+  const isLoadingSelectedMonth = loadingMonth === selectedMonth;
+
+  function selectMonth(month: string) {
+    if (!loadedMonths.has(month)) {
+      setLoadingMonth(month);
+    }
+    setSelectedMonth(month);
+  }
 
   async function handleSyncGoogleSheet() {
     await runPendingAction("google-sheet", setPendingAction, async () => {
       const response = await fetch("/api/admin/submissions/google-sheet", {
         method: "POST",
-        headers: adminMutationHeaders(),
+        headers: adminMutationHeaders(csrfToken),
         body: JSON.stringify({ month: selectedMonth }),
       });
       const json = (await response.json()) as GoogleSheetSyncResponse;
@@ -111,8 +155,9 @@ export function AdminSubmissionsTab() {
         <div>
           <h2 className="text-base font-semibold text-zinc-900">Iesniegtie rādījumi</h2>
           <p className="mt-1 text-sm text-zinc-500">
-            {formatMonthLabel(selectedMonth)}, iesnieguši {submittedRows.length} no{" "}
-            {rows.length} klientiem
+            {isLoadingSelectedMonth
+              ? `${formatMonthLabel(selectedMonth)} tiek ielādēts...`
+              : `${formatMonthLabel(selectedMonth)}, iesnieguši ${submittedRows.length} no ${rows.length} klientiem`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -121,7 +166,7 @@ export function AdminSubmissionsTab() {
             variant="secondary"
             icon={<IconRefresh />}
             loading={pendingAction === "google-sheet"}
-            disabled={isBusy || submittedRows.length === 0}
+            disabled={isBusy || isLoadingSelectedMonth || submittedRows.length === 0}
             onClick={handleSyncGoogleSheet}
           >
             Atjaunot Google Sheet
@@ -129,8 +174,8 @@ export function AdminSubmissionsTab() {
           <button
             type="button"
             className={secondaryButtonClassName}
-            disabled={isBusy}
-            onClick={() => setSelectedMonth(previousMonthKey)}
+            disabled={isBusy || isLoadingSelectedMonth}
+            onClick={() => selectMonth(previousMonthKey)}
           >
             <IconAngleLeft />
             {previousMonthLabel}
@@ -139,8 +184,8 @@ export function AdminSubmissionsTab() {
             <button
               type="button"
               className={secondaryButtonClassName}
-              disabled={isBusy}
-              onClick={() => setSelectedMonth(currentMonth)}
+              disabled={isBusy || isLoadingSelectedMonth}
+              onClick={() => selectMonth(currentMonth)}
             >
               <IconHome />
               Šis mēnesis

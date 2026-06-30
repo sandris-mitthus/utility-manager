@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MeterAddressModal } from "@/app/components/admin/meter-address-modal";
 import { MeterFormModal } from "@/app/components/admin/meter-form-modal";
 import {
@@ -69,6 +69,10 @@ export function AdminMetersTab() {
   const isExistingMeter = draft
     ? state.meters.some((meter) => meter.id === draft.id)
     : false;
+  const clientById = useMemo(
+    () => new Map(state.clients.map((client) => [client.id, client])),
+    [state.clients],
+  );
 
   return (
     <div className="space-y-6">
@@ -102,7 +106,7 @@ export function AdminMetersTab() {
               />
             ) : (
               state.meters.map((meter) => {
-              const client = state.clients.find((item) => item.id === meter.clientId);
+              const client = clientById.get(meter.clientId);
               return (
                 <tr key={meter.id}>
                   <td className="px-3 py-3">

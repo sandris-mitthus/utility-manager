@@ -1,7 +1,7 @@
 # Security audit — utility-manager
 
-**Pašreizējā atzīme:** **8.5 / 10**  
-**Pēdējā pilnā pārbaude:** 2026-06-14 (**v1.0.8**, H5/M7/M8/L8 labojumi)
+**Pašreizējā atzīme:** **8.8 / 10**
+**Pēdējā pilnā pārbaude:** 2026-06-30 (**v1.0.19**, atkārtoti pārbaudīts pēc CSRF/auth/CSP/audit/performance labojumiem)
 
 ---
 
@@ -9,8 +9,8 @@
 
 | Kontrole | Rezultāts |
 |----------|-----------|
-| Admin API — `requireAdminRead` / `requireAdminWrite` + CSRF header | ✅ |
-| CSRF admin mutācijām | ⚠️ `X-Utility-Manager-Request: 1` (statisks; ne sesijas tokens) |
+| Admin API — `requireAdminRead` / `requireAdminWrite` + admin-bound CSRF token | ✅ |
+| CSRF admin mutācijām | ✅ `X-Utility-Manager-CSRF` HMAC tokens, piesaistīts autentificētam adminam |
 | Supabase RLS (deny `anon` / `authenticated`) | ✅ + `readings_submissions`, `admin_audit_log` |
 | Service role tikai serverī | ✅ |
 | Publiskā lapa — klientu PII | ✅ Tikai kontakti SSR; lookup caur `GET /api/public/lookup` |
@@ -19,30 +19,41 @@
 | Demo dati / in-memory seed | ✅ Noņemts no `app/` |
 | Servera validācija (zod) | ✅ Visi API route faili |
 | Rate limiting | ⚠️ In-process (viena instance) |
-| HTTP drošības galvenes | ✅ CSP, HSTS, X-Frame-Options, u.c. |
+| HTTP drošības galvenes | ✅ CSP bez production `unsafe-inline` skriptiem, HSTS, X-Frame-Options, u.c. |
 | Edge auth `/api/admin` | ✅ `proxy.ts` agrīns 401 |
-| Admin audit log | ✅ `admin_audit_log` |
+| Admin/system audit log | ✅ `admin_audit_log`, arī public submit / Google sync incidenti bez sensitīviem datiem |
 | CI (push) | ✅ + CSRF, RLS 008, audit log, public lookup smoke |
 | Dependabot | ✅ |
 | `npm audit` (high+) | ✅ 0 vulnerabilities |
 
 ---
 
-## Pašreizējā atzīme: 8.5 / 10
+## Pašreizējā atzīme: 8.8 / 10
+
+### Atkārtotās pārbaudes rezultāts — 2026-06-30
+
+- ✅ Admin API route faili joprojām izmanto `requireAdminRead` / `requireAdminWrite`.
+- ✅ Admin mutācijām ir admin-bound `X-Utility-Manager-CSRF` HMAC tokens ar TTL un `timingSafeEqual`.
+- ✅ Production CSP skriptiem vairs neiekļauj `unsafe-inline`; `style-src` to vēl saglabā Next/Tailwind runtime vajadzībām.
+- ✅ Public submit / Google sync incidenti tiek auditēti ar minimāliem metadatiem un drošu `errorCode`, nevis raw kļūdas tekstu.
+- ✅ `contact_settings`, `readings_submissions` un `admin_audit_log` migrācijās ir deny RLS policy `anon` / `authenticated` lomām.
+- ✅ `npm audit --audit-level=high`: 0 ievainojamību.
+- ⚠️ Atlikušie riski nav mainījušies: in-process rate limiter, service role atslēgas operatīvā rotācija, nav server-side persisted CSRF nonce.
 
 ### Stiprās puses
 
 - **Server-side publiskā meklēšana** — `GET /api/public/lookup?q=` atgriež tikai vienu klientu + skaitītājus.
 - **Signed submission token** — `POST /api/public/submissions` prasa `submissionToken` no lookup (HMAC, 2h).
 - **SMTP paziņojums** — pēc web iesniegšanas (ja `CONTACT_SMTP_HOST` + `CONTACT_EMAIL_PASSWORD`).
-- **Admin API defense-in-depth** — edge 401 → sesija → `admin_users` → rate limit → CSRF → zod → audit log.
+- **Admin API defense-in-depth** — edge 401 → sesija → `admin_users` → admin-bound CSRF → rate limit → zod → audit log.
+- **Public submit incident logging** — veiksmīgi un neveiksmīgi web iesniegumi tiek auditēti strukturēti bez adresēm, skaitītāju numuriem vai rādījumu vērtībām.
 - **CI paplašināts** — CSRF guard, RLS 008, audit log, public page bez full DB bundle.
 
 ### Atlikušie trūkumi (kāpēc ne 10/10)
 
 - **-0.5** — in-process rate limiter (multi-instance vajag Redis/Upstash).
-- **-0.5** — service role kompromitācija = pilna DB kontrole (operatīva rotācija).
-- **-0.5** — CSRF header statisks; neaizsargā pret same-origin XSS.
+- **-0.4** — service role kompromitācija = pilna DB kontrole (operatīva rotācija).
+- **-0.3** — CSRF tokens nav server-side persisted nonce; tas ir HMAC un admin-bound, bet same-origin XSS joprojām ir jānovērš ar CSP un kodēšanas disciplīnu.
 
 ---
 
@@ -54,7 +65,7 @@
 |---|---------|----------|------------|
 | H1 | ✅ | `email_password` publiskajā lapā | `loadPublicContactSettings()` |
 | H2 | ✅ | Plaintext parole DB | `008`; ENV |
-| H3 | ✅ | CSRF admin API | `X-Utility-Manager-Request` |
+| H3 | ✅ | CSRF admin API | `X-Utility-Manager-CSRF` admin-bound HMAC tokens |
 | H4 | ✅ | `DEMO_SEED` bundlē | Demo noņemts |
 | H5 | ✅ | Visi klientu dati client bundle | `GET /api/public/lookup` |
 
@@ -66,6 +77,7 @@
 | M6 | ℹ️ | Service role uz Vercel | Rotēt atslēgu pēc incidenta; sk. README |
 | M7 | ✅ | Publiskie iesniegumi bez auth | Signed `submissionToken` |
 | M8 | ✅ | `CONTACT_EMAIL_PASSWORD` neizmantots | `contact-email.ts` + nodemailer |
+| M9 | ✅ | Dublēts admin auth layout/page līmenī | Auth lookup centralizēts admin layoutā; `AdminPanel` saņem adminu no provider |
 
 ### LOW
 
@@ -73,6 +85,8 @@
 |---|---------|----------|------------|
 | L1–L7 | ✅ | googleapis, Dependabot, demo, OAuth, audit, seed, migrācijas | Ieviests |
 | L8 | ✅ | CI neassertē CSRF/RLS 008 | `ci.yml` smoke job |
+| L9 | ✅ | Production CSP atļauj inline skriptus | `script-src`/`script-src-elem` bez `unsafe-inline` production režīmā |
+| L10 | ✅ | Public submit / Google sync incidenti nav strukturēti auditēti | `writeSystemAuditLog()` ar minimāliem metadatiem |
 
 ---
 
@@ -81,7 +95,7 @@
 | Route | Metodes | Auth | Zod | Rate limit | Audit |
 |-------|---------|------|-----|------------|-------|
 | `/api/public/lookup` | GET | — | query | ✅ | — |
-| `/api/public/submissions` | POST | token | ✅ | ✅ | — |
+| `/api/public/submissions` | POST | token | ✅ | ✅ | system |
 | `/api/admin/*` | — | admin | ✅ | ✅ | mutācijas |
 
 ---
@@ -99,9 +113,9 @@
 
 ## Ceļš uz 9–10 / 10
 
-1. Sesijas saistīts CSRF tokens admin mutācijām.
-2. Distributed rate limiting (Redis/Upstash).
-3. Service role rotācija + alerting production vidē.
+1. Distributed rate limiting (Redis/Upstash).
+2. Service role rotācija + alerting production vidē.
+3. Server-side persisted CSRF nonce, ja vēlāk vajag stingrāku tokenu revokāciju starp vienas admin sesijas tabiem.
 
 ---
 
@@ -110,6 +124,7 @@
 | Joma | Ceļš |
 |------|------|
 | Lookup token | `app/lib/security/lookup-token.ts` |
+| Admin CSRF | `app/lib/security/admin-csrf.ts` |
 | Public lookup | `app/api/public/lookup/route.ts` |
 | SMTP | `app/lib/utility/contact-email.ts` |
 | Publiskā lapa | `app/(protected)/page.tsx` |
