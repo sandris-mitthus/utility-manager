@@ -4,6 +4,8 @@ import { writeAdminAuditLog } from "@/app/lib/security/audit-log";
 import { syncGoogleSheetMonthInDb } from "@/app/lib/utility/repository";
 import { googleSheetMonthSyncSchema } from "@/app/lib/utility/schemas";
 
+export const runtime = "nodejs";
+
 export async function POST(request: NextRequest) {
   const auth = await requireAdminWrite(request);
   if (!auth.ok) {

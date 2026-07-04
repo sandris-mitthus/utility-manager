@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, FormEvent, useEffect, useMemo, useState } from "react";
 import { usePublicData } from "@/app/components/public-data-provider";
 import { ActionButton } from "@/app/components/ui/action-button";
 import {
@@ -37,6 +37,61 @@ const SUBMIT_PROGRESS_LABELS: Record<SubmitProgressStep, string> = {
   finishing: "Pabeidzam iesniegšanu",
 };
 
+type MeterReadingCardProps = {
+  meter: UtilityMeter;
+  value: string;
+  consumption: number | null;
+  onValueChange: (meterId: string, nextValue: string) => void;
+};
+
+const MeterReadingCard = memo(function MeterReadingCard({
+  meter,
+  value,
+  consumption,
+  onValueChange,
+}: MeterReadingCardProps) {
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-4">
+      <div>
+        <p className="text-sm font-semibold text-zinc-900">{METER_TYPE_LABELS[meter.type]}</p>
+        <div className="mt-1 flex items-start justify-between gap-4">
+          <p className="text-xs text-zinc-500">
+            {meter.number} · {meter.location}
+          </p>
+          <p className="shrink-0 text-right text-xs text-zinc-500">
+            Skaitītāja rādījums uz skaitītāja:{" "}
+            <span className="font-medium text-zinc-900">{formatReading(meter.previousReading)}</span>
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <label htmlFor={`reading-${meter.id}`} className="sr-only">
+          Pašreizējais rādījums
+        </label>
+        <IconInput
+          id={`reading-${meter.id}`}
+          type="text"
+          inputMode="decimal"
+          pattern="[0-9.,]*"
+          placeholder="piem., 125.4"
+          value={value}
+          onChange={(event) => onValueChange(meter.id, event.target.value)}
+          icon={<IconGauge className="size-4" />}
+          className="text-right text-base"
+        />
+
+        <p className="mt-2 text-right text-sm text-zinc-600">
+          Šī mēneša patēriņš:{" "}
+          <span className="font-semibold text-zinc-900">
+            {consumption !== null ? `${formatReading(consumption)} m³` : "— m³"}
+          </span>
+        </p>
+      </div>
+    </div>
+  );
+});
+
 export function MeterReadingForm({
   client,
   meters,
@@ -61,6 +116,19 @@ export function MeterReadingForm({
   }, [meters, values]);
 
   const [pendingAction, setPendingAction] = useState<"submit" | null>(null);
+
+  const handleValueChange = useCallback(
+    (meterId: string, nextValue: string) => {
+      setValues((current) => ({
+        ...current,
+        [meterId]: sanitizeReadingInput(nextValue),
+      }));
+      if (error) {
+        setError(null);
+      }
+    },
+    [error],
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -235,59 +303,13 @@ export function MeterReadingForm({
           const consumption = calculateConsumption(meter.previousReading, currentValue);
 
           return (
-            <div
+            <MeterReadingCard
               key={meter.id}
-              className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-4"
-            >
-              <div>
-                <p className="text-sm font-semibold text-zinc-900">
-                  {METER_TYPE_LABELS[meter.type]}
-                </p>
-                <div className="mt-1 flex items-start justify-between gap-4">
-                  <p className="text-xs text-zinc-500">
-                    {meter.number} · {meter.location}
-                  </p>
-                  <p className="shrink-0 text-right text-xs text-zinc-500">
-                    Skaitītāja rādījums uz skaitītāja:{" "}
-                    <span className="font-medium text-zinc-900">
-                      {formatReading(meter.previousReading)}
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <label htmlFor={`reading-${meter.id}`} className="sr-only">
-                  Pašreizējais rādījums
-                </label>
-                <IconInput
-                  id={`reading-${meter.id}`}
-                  type="text"
-                  inputMode="decimal"
-                  pattern="[0-9.,]*"
-                  placeholder="piem., 125.4"
-                  value={values[meter.id] ?? ""}
-                  onChange={(event) => {
-                    setValues((current) => ({
-                      ...current,
-                      [meter.id]: sanitizeReadingInput(event.target.value),
-                    }));
-                    if (error) {
-                      setError(null);
-                    }
-                  }}
-                  icon={<IconGauge className="size-4" />}
-                  className="text-right text-base"
-                />
-
-                <p className="mt-2 text-right text-sm text-zinc-600">
-                  Šī mēneša patēriņš:{" "}
-                  <span className="font-semibold text-zinc-900">
-                    {consumption !== null ? `${formatReading(consumption)} m³` : "— m³"}
-                  </span>
-                </p>
-              </div>
-            </div>
+              meter={meter}
+              value={values[meter.id] ?? ""}
+              consumption={consumption}
+              onValueChange={handleValueChange}
+            />
           );
         })}
 

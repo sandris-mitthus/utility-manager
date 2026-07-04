@@ -7,6 +7,7 @@ export const contactSettingsSchema = z.object({
   smsNumber: z.string().trim().max(40),
   whatsappNumber: z.string().trim().max(40),
   phoneNumber: z.string().trim().max(40),
+  readingSubmissionTemplate: z.string().trim().max(2000),
   imapHost: z.string().trim().max(255).optional(),
   emailPassword: z.string().max(200).optional(),
 });

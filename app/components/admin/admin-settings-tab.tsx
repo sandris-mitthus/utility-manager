@@ -9,6 +9,7 @@ import {
 import { ActionButton } from "@/app/components/ui/action-button";
 import {
   cardClassName,
+  inputClassName,
   labelClassName,
 } from "@/app/components/ui/form-styles";
 import { IconInput, PasswordInput } from "@/app/components/ui/icon-input";
@@ -34,6 +35,7 @@ export function AdminSettingsTab() {
     smsNumber: state.settings.smsNumber,
     whatsappNumber: state.settings.whatsappNumber,
     phoneNumber: state.settings.phoneNumber,
+    readingSubmissionTemplate: state.settings.readingSubmissionTemplate,
     imapHost: state.settings.imapHost,
   });
   const [emailPasswordDraft, setEmailPasswordDraft] = useState("");
@@ -49,6 +51,7 @@ export function AdminSettingsTab() {
         smsNumber: draft.smsNumber.trim(),
         whatsappNumber: draft.whatsappNumber.trim(),
         phoneNumber: draft.phoneNumber.trim(),
+        readingSubmissionTemplate: draft.readingSubmissionTemplate.trim(),
         imapHost: draft.imapHost.trim(),
       };
 
@@ -63,6 +66,14 @@ export function AdminSettingsTab() {
         return;
       }
 
+      setDraft({
+        email: result.data.email,
+        smsNumber: result.data.smsNumber,
+        whatsappNumber: result.data.whatsappNumber,
+        phoneNumber: result.data.phoneNumber,
+        readingSubmissionTemplate: result.data.readingSubmissionTemplate,
+        imapHost: result.data.imapHost,
+      });
       setEmailPasswordDraft("");
       setFeedback({ message: "Iestatījumi saglabāti.", variant: "success" });
     });
@@ -184,6 +195,29 @@ export function AdminSettingsTab() {
               wrapperClassName="mt-1"
             />
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="settings-reading-template" className={labelClassName}>
+            Ieteicamais rādījumu teksts FAQ blokiem
+          </label>
+          <textarea
+            id="settings-reading-template"
+            value={draft.readingSubmissionTemplate}
+            onChange={(event) =>
+              setDraft({ ...draft, readingSubmissionTemplate: event.target.value })
+            }
+            rows={5}
+            className={`${inputClassName} mt-1 min-h-32 resize-y`}
+            placeholder={`Klienta numurs: KLIENTA NUMURS
+Aukstais ūdens: AUKSTA ŪDENS RĀDĪJUMI
+Karstais ūdens: KARSTA ŪDENS RĀDĪJUMI
+Kanalizācija: KANALIZĀCIJAS RĀDĪJUMI`}
+          />
+          <p className="mt-1 text-xs text-zinc-500">
+            Šis teksts tiek rādīts publiskā FAQ sadaļā pie SMS, WhatsApp un e-pasta
+            ieteicamā kopējamā parauga.
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-3">

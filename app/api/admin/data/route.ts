@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireAdminRead } from "@/app/lib/auth/require-admin-mutation";
-import { loadUtilityAdminState } from "@/app/lib/utility/repository";
+import { loadAdminSubmissions } from "@/app/lib/utility/repository";
 import { getCurrentMonthKey } from "@/app/lib/utility/helpers";
 
 function getRequestedMonth(request: NextRequest): string {
@@ -18,8 +18,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const state = await loadUtilityAdminState(getRequestedMonth(request));
-    return Response.json({ success: true, data: state });
+    const submissions = await loadAdminSubmissions(getRequestedMonth(request));
+    return Response.json({ success: true, data: submissions });
   } catch (error) {
     return Response.json(
       {

@@ -12,6 +12,7 @@ import { runEmailInboxImportPipeline } from "@/app/lib/utility/import-email-inbo
 import { deleteIdQuerySchema } from "@/app/lib/utility/schemas";
 
 const EMAIL_IMPORT_BATCH_SIZE = 10;
+export const runtime = "nodejs";
 
 async function loadInboxResponseData() {
   const [messages, fetchState] = await Promise.all([

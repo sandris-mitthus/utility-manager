@@ -31,6 +31,7 @@ export type PublicContactSettings = {
   smsNumber: string;
   whatsappNumber: string;
   phoneNumber: string;
+  readingSubmissionTemplate: string;
 };
 
 export type AdminContactSettings = PublicContactSettings & {

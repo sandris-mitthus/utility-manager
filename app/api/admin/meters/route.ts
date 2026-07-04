@@ -5,7 +5,7 @@ import {
   deleteIdQuerySchema,
   utilityMeterSchema,
 } from "@/app/lib/utility/schemas";
-import { deleteMeterById, loadUtilityAdminState, upsertMeter } from "@/app/lib/utility/repository";
+import { deleteMeterById, loadAdminMeters, upsertMeter } from "@/app/lib/utility/repository";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdminRead(request);
@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const state = await loadUtilityAdminState();
-    return Response.json({ success: true, data: state.meters });
+    const meters = await loadAdminMeters();
+    return Response.json({ success: true, data: meters });
   } catch (error) {
     return Response.json(
       {

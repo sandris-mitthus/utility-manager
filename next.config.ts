@@ -20,7 +20,7 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["nodemailer", "imapflow", "mailparser"],
+  serverExternalPackages: ["nodemailer", "imapflow", "mailparser", "googleapis"],
   async headers() {
     return [
       {

@@ -44,6 +44,7 @@ type ContactSettingsRow = {
   sms_number: string;
   whatsapp_number: string;
   phone_number: string;
+  reading_submission_template?: string;
   imap_host?: string;
   email_password?: string;
 };
@@ -65,6 +66,7 @@ const METER_COLUMNS_BASE =
 const METER_COLUMNS_WITH_BASELINE = `${METER_COLUMNS_BASE}, baseline_reading`;
 
 let meterBaselineColumnAvailable: boolean | null = null;
+let readingSubmissionTemplateColumnAvailable: boolean | null = null;
 
 function isMissingBaselineColumnError(message: string | undefined): boolean {
   if (!message) {
@@ -72,6 +74,21 @@ function isMissingBaselineColumnError(message: string | undefined): boolean {
   }
 
   return message.includes("baseline_reading") && message.includes("does not exist");
+}
+
+function isMissingReadingSubmissionTemplateColumnError(message: string | undefined): boolean {
+  if (!message) {
+    return false;
+  }
+
+  return (
+    message.includes("reading_submission_template") &&
+    (message.includes("does not exist") || message.includes("schema cache"))
+  );
+}
+
+function hasCustomReadingSubmissionTemplate(value: string | undefined): boolean {
+  return Boolean(value?.trim());
 }
 
 type MeterQueryResult = {
@@ -105,6 +122,56 @@ async function queryMeterRows(
   return (withoutBaseline.data ?? []) as MeterRow[];
 }
 
+async function queryContactSettingsRow(
+  supabase: ReturnType<typeof createAdminClient>,
+  options: { includeAdminFields: boolean },
+): Promise<ContactSettingsRow> {
+  const baseColumns = "email, sms_number, whatsapp_number, phone_number";
+  const adminColumns = options.includeAdminFields ? ", imap_host, email_password" : "";
+  const withTemplateColumns = `${baseColumns}, reading_submission_template${adminColumns}`;
+  const withoutTemplateColumns = `${baseColumns}${adminColumns}`;
+
+  if (readingSubmissionTemplateColumnAvailable !== false) {
+    const withTemplate = await supabase
+      .from("contact_settings")
+      .select(withTemplateColumns)
+      .eq("id", 1)
+      .maybeSingle();
+
+    if (!withTemplate.error) {
+      readingSubmissionTemplateColumnAvailable = true;
+
+      if (!withTemplate.data) {
+        throw new Error("Kontaktu iestatījumi nav atrasti.");
+      }
+
+      return withTemplate.data as unknown as ContactSettingsRow;
+    }
+
+    if (isMissingReadingSubmissionTemplateColumnError(withTemplate.error.message)) {
+      readingSubmissionTemplateColumnAvailable = false;
+    } else {
+      throw new Error(withTemplate.error.message);
+    }
+  }
+
+  const withoutTemplate = await supabase
+    .from("contact_settings")
+    .select(withoutTemplateColumns)
+    .eq("id", 1)
+    .maybeSingle();
+
+  if (withoutTemplate.error) {
+    throw new Error(withoutTemplate.error.message);
+  }
+
+  if (!withoutTemplate.data) {
+    throw new Error("Kontaktu iestatījumi nav atrasti.");
+  }
+
+  return withoutTemplate.data as unknown as ContactSettingsRow;
+}
+
 function requireDb() {
   if (!isSupabaseAdminConfigured()) {
     throw new Error("Supabase nav konfigurēts. Pievienojiet vides mainīgos.");
@@ -117,6 +184,7 @@ function mapPublicSettings(row: ContactSettingsRow): PublicContactSettings {
     smsNumber: row.sms_number,
     whatsappNumber: row.whatsapp_number,
     phoneNumber: row.phone_number,
+    readingSubmissionTemplate: row.reading_submission_template?.trim() ?? "",
   };
 }
 
@@ -170,11 +238,18 @@ function enrichSubmissionsWithBaselines(
 }
 
 function attachMeterIds(clients: ClientRow[], meters: UtilityMeter[]): UtilityClient[] {
+  const meterIdsByClientId = new Map<string, string[]>();
+  for (const meter of meters) {
+    const current = meterIdsByClientId.get(meter.clientId) ?? [];
+    current.push(meter.id);
+    meterIdsByClientId.set(meter.clientId, current);
+  }
+
   return clients.map((client) => ({
     id: client.id,
     clientNumber: client.client_number,
     address: client.address,
-    meterIds: meters.filter((meter) => meter.clientId === client.id).map((meter) => meter.id),
+    meterIds: meterIdsByClientId.get(client.id) ?? [],
   }));
 }
 
@@ -333,75 +408,91 @@ async function rollbackSubmittedReadings(
   }
 }
 
-async function loadCoreData(
-  supabase: ReturnType<typeof createAdminClient>,
-  options: { submissionsMonth?: string } = {},
-) {
-  let submissionsQuery = supabase
-    .from("readings_submissions")
-    .select("client_id, month, submitted_at, readings")
-    .order("submitted_at", { ascending: false });
+async function loadClientRows(supabase: ReturnType<typeof createAdminClient>): Promise<ClientRow[]> {
+  const clientsResult = await supabase
+    .from("clients")
+    .select("id, client_number, address")
+    .order("client_number");
 
-  if (options.submissionsMonth) {
-    submissionsQuery = submissionsQuery.eq("month", options.submissionsMonth);
+  if (clientsResult.error) {
+    throw new Error(clientsResult.error.message || "Failed to load utility clients");
   }
 
-  const [settingsResult, clientsResult, submissionsResult] = await Promise.all([
-    supabase
-      .from("contact_settings")
-      .select("email, sms_number, whatsapp_number, phone_number, imap_host, email_password")
-      .eq("id", 1)
-      .maybeSingle(),
-    supabase.from("clients").select("id, client_number, address").order("client_number"),
-    submissionsQuery,
-  ]);
+  return (clientsResult.data ?? []) as ClientRow[];
+}
 
+async function loadMappedMeters(supabase: ReturnType<typeof createAdminClient>): Promise<UtilityMeter[]> {
   const meterRows = await queryMeterRows(supabase, async (columns) =>
     supabase.from("meters").select(columns).order("number"),
   );
 
-  if (settingsResult.error || clientsResult.error || submissionsResult.error) {
-    throw new Error(
-      settingsResult.error?.message ||
-        clientsResult.error?.message ||
-        submissionsResult.error?.message ||
-        "Failed to load utility data",
-    );
+  return meterRows.map(mapMeter);
+}
+
+async function loadClientsAndMeters(
+  supabase: ReturnType<typeof createAdminClient>,
+) {
+  const [clientRows, meters] = await Promise.all([
+    loadClientRows(supabase),
+    loadMappedMeters(supabase),
+  ]);
+
+  return { clients: attachMeterIds(clientRows, meters), meters };
+}
+
+async function loadSubmissionsForMonth(
+  supabase: ReturnType<typeof createAdminClient>,
+  submissionsMonth: string,
+  meters: UtilityMeter[],
+): Promise<UtilitySubmission[]> {
+  const submissionsResult = await supabase
+    .from("readings_submissions")
+    .select("client_id, month, submitted_at, readings")
+    .eq("month", submissionsMonth)
+    .order("submitted_at", { ascending: false });
+
+  if (submissionsResult.error) {
+    throw new Error(submissionsResult.error.message || "Failed to load utility submissions");
   }
 
-  const meters = meterRows.map(mapMeter);
-  const clients = attachMeterIds(clientsResult.data as ClientRow[], meters);
-  const submissions = enrichSubmissionsWithBaselines(
+  return enrichSubmissionsWithBaselines(
     (submissionsResult.data as SubmissionRow[]).map(mapSubmission),
     meters,
   );
-
-  const settingsRow = settingsResult.data as ContactSettingsRow | null;
-  if (!settingsRow) {
-    throw new Error("Kontaktu iestatījumi nav atrasti.");
-  }
-
-  return { clients, meters, submissions, settingsRow };
 }
 
 export async function loadPublicContactSettings(): Promise<PublicContactSettings> {
   requireDb();
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("contact_settings")
-    .select("email, sms_number, whatsapp_number, phone_number")
-    .eq("id", 1)
-    .maybeSingle();
+  const data = await queryContactSettingsRow(supabase, { includeAdminFields: false });
+  return mapPublicSettings(data);
+}
 
-  if (error) {
-    throw new Error(error.message);
-  }
+export async function loadAdminClients(): Promise<UtilityClient[]> {
+  requireDb();
+  const supabase = createAdminClient();
+  const [clientRows, meters] = await Promise.all([loadClientRows(supabase), loadMappedMeters(supabase)]);
+  return attachMeterIds(clientRows, meters);
+}
 
-  if (!data) {
-    throw new Error("Kontaktu iestatījumi nav atrasti.");
-  }
+export async function loadAdminMeters(): Promise<UtilityMeter[]> {
+  requireDb();
+  const supabase = createAdminClient();
+  return loadMappedMeters(supabase);
+}
 
-  return mapPublicSettings(data as ContactSettingsRow);
+export async function loadAdminSettings(): Promise<AdminContactSettings> {
+  requireDb();
+  const supabase = createAdminClient();
+  const settingsRow = await queryContactSettingsRow(supabase, { includeAdminFields: true });
+  return mapAdminSettings(settingsRow);
+}
+
+export async function loadAdminSubmissions(submissionsMonth = getCurrentMonthKey()): Promise<UtilitySubmission[]> {
+  requireDb();
+  const supabase = createAdminClient();
+  const meters = await loadMappedMeters(supabase);
+  return loadSubmissionsForMonth(supabase, submissionsMonth, meters);
 }
 
 function escapeIlike(value: string): string {
@@ -581,13 +672,15 @@ export async function validatePublicSubmissionInDb(
 export async function loadUtilityAdminState(submissionsMonth = getCurrentMonthKey()): Promise<UtilityState> {
   requireDb();
   const supabase = createAdminClient();
-  const { clients, meters, submissions, settingsRow } = await loadCoreData(supabase, {
-    submissionsMonth,
-  });
+  const [settingsRow, referenceData] = await Promise.all([
+    queryContactSettingsRow(supabase, { includeAdminFields: true }),
+    loadClientsAndMeters(supabase),
+  ]);
+  const submissions = await loadSubmissionsForMonth(supabase, submissionsMonth, referenceData.meters);
 
   return {
-    clients,
-    meters,
+    clients: referenceData.clients,
+    meters: referenceData.meters,
     submissions,
     settings: mapAdminSettings(settingsRow),
   };
@@ -599,19 +692,24 @@ export async function syncGoogleSheetMonthInDb(month: string): Promise<GoogleShe
   }
 
   const supabase = createAdminClient();
-  const { clients, meters, submissions } = await loadCoreData(supabase, {
-    submissionsMonth: month,
-  });
-  const monthSubmissions = submissions.filter((submission) => submission.month === month);
+  const { clients, meters } = await loadClientsAndMeters(supabase);
+  const monthSubmissions = await loadSubmissionsForMonth(supabase, month, meters);
+  const clientById = new Map(clients.map((client) => [client.id, client]));
+  const metersByClientId = new Map<string, UtilityMeter[]>();
+  for (const meter of meters) {
+    const current = metersByClientId.get(meter.clientId) ?? [];
+    current.push(meter);
+    metersByClientId.set(meter.clientId, current);
+  }
   let spreadsheetUrl: string | null = null;
 
   for (const submission of monthSubmissions) {
-    const client = clients.find((item) => item.id === submission.clientId);
+    const client = clientById.get(submission.clientId);
     if (!client) {
       continue;
     }
 
-    const clientMeters = meters.filter((meter) => meter.clientId === client.id);
+    const clientMeters = metersByClientId.get(client.id) ?? [];
     const result = await syncSubmissionToGoogleSheet(supabase, {
       month: submission.month,
       submittedAt: submission.submittedAt,
@@ -641,6 +739,7 @@ export async function updateContactSettings(
     sms_number: settings.smsNumber,
     whatsapp_number: settings.whatsappNumber,
     phone_number: settings.phoneNumber,
+    reading_submission_template: settings.readingSubmissionTemplate,
   };
 
   if (settings.imapHost !== undefined) {
@@ -651,18 +750,52 @@ export async function updateContactSettings(
     updatePayload.email_password = settings.emailPassword.trim();
   }
 
-  const { data, error } = await supabase
+  if (readingSubmissionTemplateColumnAvailable === false) {
+    if (hasCustomReadingSubmissionTemplate(settings.readingSubmissionTemplate)) {
+      throw new Error(
+        "FAQ rādījumu teksta lauks vēl nav aktivizēts datubāzē. Palaidiet migrāciju 015_contact_settings_reading_submission_template.sql un mēģiniet vēlreiz.",
+      );
+    }
+    delete updatePayload.reading_submission_template;
+  }
+
+  const update = await supabase
     .from("contact_settings")
     .update(updatePayload)
     .eq("id", 1)
-    .select("email, sms_number, whatsapp_number, phone_number, imap_host, email_password")
+    .select(
+      "email, sms_number, whatsapp_number, phone_number, reading_submission_template, imap_host, email_password",
+    )
     .single();
 
-  if (error || !data) {
-    throw new Error(error?.message || "Failed to update settings");
+  if (update.error && isMissingReadingSubmissionTemplateColumnError(update.error.message)) {
+    readingSubmissionTemplateColumnAvailable = false;
+    if (hasCustomReadingSubmissionTemplate(settings.readingSubmissionTemplate)) {
+      throw new Error(
+        "FAQ rādījumu teksta lauks vēl nav aktivizēts datubāzē. Palaidiet migrāciju 015_contact_settings_reading_submission_template.sql un mēģiniet vēlreiz.",
+      );
+    }
+    delete updatePayload.reading_submission_template;
+
+    const fallbackUpdate = await supabase
+      .from("contact_settings")
+      .update(updatePayload)
+      .eq("id", 1)
+      .select("email, sms_number, whatsapp_number, phone_number, imap_host, email_password")
+      .single();
+
+    if (fallbackUpdate.error || !fallbackUpdate.data) {
+      throw new Error(fallbackUpdate.error?.message || "Failed to update settings");
+    }
+
+    return mapAdminSettings(fallbackUpdate.data as ContactSettingsRow);
   }
 
-  return mapAdminSettings(data as ContactSettingsRow);
+  if (update.error || !update.data) {
+    throw new Error(update.error?.message || "Failed to update settings");
+  }
+
+  return mapAdminSettings(update.data as ContactSettingsRow);
 }
 
 export async function submitReadingsInDb(

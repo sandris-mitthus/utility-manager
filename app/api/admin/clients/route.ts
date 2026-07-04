@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { requireAdminRead, requireAdminWrite } from "@/app/lib/auth/require-admin-mutation";
 import { writeAdminAuditLog } from "@/app/lib/security/audit-log";
 import { utilityClientSchema, deleteIdQuerySchema } from "@/app/lib/utility/schemas";
-import { deleteClientById, loadUtilityAdminState, upsertClient } from "@/app/lib/utility/repository";
+import { deleteClientById, loadAdminClients, upsertClient } from "@/app/lib/utility/repository";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdminRead(request);
@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const state = await loadUtilityAdminState();
-    return Response.json({ success: true, data: state.clients });
+    const clients = await loadAdminClients();
+    return Response.json({ success: true, data: clients });
   } catch (error) {
     return Response.json(
       {

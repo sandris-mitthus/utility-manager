@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { memo, useState, type ReactNode } from "react";
 import { CopyableTextBlock } from "@/app/components/copyable-text-block";
 import { IconChevronDown } from "@/app/components/ui/icons";
 
@@ -18,7 +18,7 @@ type FaqAccordionProps = {
   subtitle?: string;
 };
 
-export function FaqAccordion({
+export const FaqAccordion = memo(function FaqAccordion({
   items,
   title = "Biežāk uzdotie jautājumi",
   subtitle,
@@ -77,4 +77,4 @@ export function FaqAccordion({
       </div>
     </section>
   );
-}
+});

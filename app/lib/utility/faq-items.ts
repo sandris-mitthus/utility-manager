@@ -24,6 +24,8 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
   const smsNumber = trimmed(settings.smsNumber);
   const whatsappNumber = trimmed(settings.whatsappNumber);
   const email = trimmed(settings.email);
+  const readingSubmissionTemplate =
+    trimmed(settings.readingSubmissionTemplate) || READING_SUBMISSION_TEMPLATE;
 
   return [
     {
@@ -58,7 +60,7 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
             ". Ziņojumā norādiet klienta numuru un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.",
           )
         : "SMS numurs vēl nav norādīts. Sazinieties ar administratoru.",
-      copyTemplate: smsNumber ? READING_SUBMISSION_TEMPLATE : undefined,
+      copyTemplate: smsNumber ? readingSubmissionTemplate : undefined,
       copyLabel: "Ieteicamais SMS teksts",
     },
     {
@@ -71,7 +73,7 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
             ". Pievienojiet klienta numuru un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.",
           )
         : "WhatsApp numurs vēl nav norādīts. Sazinieties ar administratoru.",
-      copyTemplate: whatsappNumber ? READING_SUBMISSION_TEMPLATE : undefined,
+      copyTemplate: whatsappNumber ? readingSubmissionTemplate : undefined,
       copyLabel: "Ieteicamais WhatsApp teksts",
     },
     {
@@ -84,7 +86,7 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
             ". Zemāk ir teksts, ko varat nokopēt un aizpildīt ar saviem rādījumiem.",
           )
         : "E-pasta adrese vēl nav norādīta. Sazinieties ar administratoru.",
-      copyTemplate: email ? READING_SUBMISSION_TEMPLATE : undefined,
+      copyTemplate: email ? readingSubmissionTemplate : undefined,
       copyLabel: "Ieteicamais e-pasta teksts",
     },
     {

@@ -1,6 +1,8 @@
 import { fetchContactInboxEmails } from "@/app/lib/utility/fetch-contact-inbox";
 import { runEmailInboxImportPipeline } from "@/app/lib/utility/import-email-inbox-submissions";
 
+export const runtime = "nodejs";
+
 function isAuthorizedCron(request: Request): boolean {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {

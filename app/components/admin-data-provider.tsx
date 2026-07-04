@@ -19,6 +19,7 @@ import type {
   ContactSettingsUpdate,
   UtilityClient,
   UtilityMeter,
+  UtilitySubmission,
   UtilityState,
 } from "@/app/lib/utility/types";
 import type { AdminUser } from "@/app/lib/auth/admin-types";
@@ -31,7 +32,7 @@ type AdminDataContextValue = {
   reloadState: (month?: string) => Promise<void>;
   updateSettings: (
     settings: ContactSettingsUpdate,
-  ) => Promise<{ ok: true } | { ok: false; message: string }>;
+  ) => Promise<{ ok: true; data: AdminContactSettings } | { ok: false; message: string }>;
   saveClient: (client: UtilityClient) => Promise<{ ok: true } | { ok: false; message: string }>;
   deleteClient: (clientId: string) => Promise<{ ok: true } | { ok: false; message: string }>;
   saveMeter: (meter: UtilityMeter) => Promise<{ ok: true } | { ok: false; message: string }>;
@@ -182,13 +183,13 @@ function attachMeterToClientInState(
 function replaceMonthSubmissionsInState(
   current: UtilityState,
   month: string,
-  nextState: UtilityState,
+  nextSubmissions: UtilitySubmission[],
 ): UtilityState {
   return {
-    ...nextState,
+    ...current,
     submissions: [
       ...current.submissions.filter((submission) => submission.month !== month),
-      ...nextState.submissions,
+      ...nextSubmissions,
     ],
   };
 }
@@ -213,11 +214,11 @@ export function AdminDataProvider({
     });
     const json = (await response.json()) as {
       success?: boolean;
-      data?: UtilityState;
+      data?: UtilitySubmission[];
     };
 
     if (response.ok && json.success && json.data) {
-      setState((current) => replaceMonthSubmissionsInState(current, month, json.data!));
+      setState((current) => replaceMonthSubmissionsInState(current, month, json.data ?? []));
     }
   }, [mutationHeaders]);
 
@@ -230,6 +231,7 @@ export function AdminDataProvider({
         smsNumber: settings.smsNumber,
         whatsappNumber: settings.whatsappNumber,
         phoneNumber: settings.phoneNumber,
+        readingSubmissionTemplate: settings.readingSubmissionTemplate,
         imapHost: settings.imapHost,
         emailPassword: settings.emailPassword,
       }),
@@ -242,7 +244,7 @@ export function AdminDataProvider({
 
     const json = (await response.json()) as { success: boolean; data: AdminContactSettings };
     setState((current) => ({ ...current, settings: json.data }));
-    return { ok: true as const };
+    return { ok: true as const, data: json.data };
   }, [mutationHeaders]);
 
   const saveClient = useCallback(async (client: UtilityClient) => {

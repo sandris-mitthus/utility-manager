@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
+import { revalidatePath } from "next/cache";
 import { requireAdminRead, requireAdminWrite } from "@/app/lib/auth/require-admin-mutation";
 import { writeAdminAuditLog } from "@/app/lib/security/audit-log";
 import { contactSettingsSchema } from "@/app/lib/utility/schemas";
-import { loadUtilityAdminState, updateContactSettings } from "@/app/lib/utility/repository";
+import { loadAdminSettings, updateContactSettings } from "@/app/lib/utility/repository";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdminRead(request);
@@ -11,8 +12,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const state = await loadUtilityAdminState();
-    return Response.json({ success: true, data: state.settings });
+    const settings = await loadAdminSettings();
+    return Response.json({ success: true, data: settings });
   } catch (error) {
     return Response.json(
       {
@@ -39,6 +40,7 @@ export async function PATCH(request: NextRequest) {
       entityType: "contact_settings",
       entityId: "1",
     });
+    revalidatePath("/");
     return Response.json({ success: true, data: settings });
   } catch (error) {
     return Response.json(
