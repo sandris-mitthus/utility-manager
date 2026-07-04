@@ -105,7 +105,7 @@ export function MeterReadingForm({
   }
 
   useEffect(() => {
-    if (!success) {
+    if (!success && !hasSubmissionThisMonth) {
       return;
     }
 
@@ -118,7 +118,7 @@ export function MeterReadingForm({
       window.clearInterval(intervalId);
       window.clearTimeout(timeoutId);
     };
-  }, [onSubmissionComplete, success]);
+  }, [hasSubmissionThisMonth, onSubmissionComplete, success]);
 
   if (hasSubmissionThisMonth) {
     return (
@@ -129,14 +129,17 @@ export function MeterReadingForm({
           <span className="font-semibold text-zinc-900">Nr. {client.clientNumber}</span> jau ir
           saglabāti.
         </p>
+        <p className="mt-4 text-sm text-zinc-500">
+          Pēc {redirectCountdown} sek. atgriezīsim sākuma lapā.
+        </p>
         <ActionButton
           type="button"
           variant="primary"
-          onClick={onBack}
+          onClick={onSubmissionComplete}
           icon={<IconArrowLeft />}
           className="mt-6"
         >
-          Atpakaļ
+          Atpakaļ tagad
         </ActionButton>
       </div>
     );
