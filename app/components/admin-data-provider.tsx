@@ -399,6 +399,7 @@ export function createEmptyClient(): UtilityClient {
     clientNumber: "",
     address: "",
     meterIds: [],
+    publicToken: "",
   };
 }
 

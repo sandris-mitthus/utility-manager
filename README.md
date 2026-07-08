@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.23` (see [Changelog](#changelog))
+**Current version:** `1.0.25` (see [Changelog](#changelog))
 
 ---
 
@@ -18,14 +18,14 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 
 ### Starter UI
 
-- **Sākums** (`/`) — klienta meklēšana (`GET /api/public/lookup`) un rādījumu iesniegšana ar signed token; ja šī mēneša rādījumi jau ir (web vai e-pasts), rāda „Rādījumi jau iesniegti” ar automātisku countdown atgriešanos uz sākumu; FAQ kontakti un kopējamais rādījumu paraugs tiek ņemti no admin iestatījumiem
-- **Administrācija** (`/admin`) — klienti, skaitītāji, iesniegtie rādījumi, **e-pasta rādījumi** (IMAP, parsēšana, automātisks imports), kontaktu iestatījumi; CSRF + rate limit admin API
+- **Sākums** (`/`) — klienta meklēšana (`GET /api/public/lookup`) un rādījumu iesniegšana ar signed token; **tiešā saite** `/r/{public_token}` atver to pašu formu bez meklēšanas; ja šī mēneša rādījumi jau ir (web vai e-pasts), rāda „Rādījumi jau iesniegti” ar automātisku countdown atgriešanos uz sākumu; FAQ kontakti un kopējamais rādījumu paraugs tiek ņemti no admin iestatījumiem
+- **Administrācija** (`/admin`) — klienti (ar pogām atvērt/kopēt rādījumu saiti), skaitītāji, iesniegtie rādījumi, **e-pasta rādījumi** (IMAP, parsēšana, automātisks imports), kontaktu iestatījumi; CSRF + rate limit admin API
 - **App nav** — app name from `app_settings.app_name` (fallback: “Utility Manager”)
 - **SectionPage** layout helper for new screens
 
 ### Rādījumu nodošana (2 veidi)
 
-1. **Web** — klients meklē adresi/numuru, aizpilda formu (`POST /api/public/submissions`)
+1. **Web** — klients meklē adresi/numuru vai atver personīgo saiti `/r/{public_token}`, aizpilda formu (`POST /api/public/submissions`)
 2. **E-pasts** — admin (vai ārējs scheduler) ievāc nelasītos e-pastus (IMAP), parsē tekstu (Limbažu formāti), piesaista skaitītājiem un **automātiski pievieno** sadaļai „Rādījumi” (`readings_submissions`). Abi veidi dalās vienu mēneša ierakstu — pēc importa web forma rāda „jau iesniegti” līdz nākamajam kalendārajam mēnesim.
 3. **Google Sheets** — ja serverī ir Google OAuth ENV (ieteicams) vai service account fallback, katram mēnesim automātiski tiek izveidots savs Spreadsheet fails; katram klientam ir viena rinda, un e-pasta apvienošana atjaunina esošo klienta rindu.
 
@@ -37,7 +37,7 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 - **`email_inbox_messages`**, **`email_fetch_state`** — IMAP ievākšana, parsēšana, importa statuss (`010`, `012`)
 - **`contact_settings.email_password`**, **`imap_host`**, **`reading_submission_template`** — admin IMAP/SMTP un FAQ kopējamais rādījumu teksts (`011`, `015`); ENV rezerves variants
 - **`meters.baseline_reading`** — skaitītāja rādījums uz skaitītāja; netiek pārrakstīts pēc iesniegšanas (`009`); patēriņš adminā
-- **`contact_settings`**, **`clients`**, **`meters`** — admin CRUD (migrācijas `005`, `006` sākuma dati)
+- **`contact_settings`**, **`clients`** (`public_token` unikālai rādījumu saitei, `017`), **`meters`** — admin CRUD (migrācijas `005`, `006` sākuma dati)
 - **`admin_users`** — administratoru e-pasta whitelist (`002`–`004`)
 - App tables use **service-role server access** with RLS deny policies for browser clients
 - `npm run db:migrate` applies only **pending** migrations (tracked in `public.schema_migrations`); pēc migrācijas automātiski pārlādē PostgREST kešu
@@ -331,6 +331,11 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.25
+
+- **Klienta rādījumu saite** — katram klientam unikāls `/r/{public_token}` URL ar to pašu rādījumu formu; admin klientu tabulā pogas atvērt saiti jaunā cilnē un kopēt to starpliktuvē; migrācija `017`
+- **Public submit UX** — noņemts Google Sheet sinhronizācijas progress bloks no rādījumu formas; iesniegšanas laikā paliek tikai pogas loading stāvoklis
 
 ### v1.0.23
 

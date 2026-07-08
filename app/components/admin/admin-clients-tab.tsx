@@ -18,13 +18,16 @@ import {
 } from "@/app/components/ui/form-styles";
 import { ConfirmCloseDialog } from "@/app/components/ui/confirm-close-dialog";
 import {
+  IconCopy,
   IconGauge,
+  IconLink,
   IconPencil,
   IconPlus,
   IconTrash,
 } from "@/app/components/ui/icons";
 import { TableEmptyRow } from "@/app/components/ui/table-empty-row";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
+import { buildClientReadingUrl } from "@/app/lib/utility/client-reading-url";
 import type { UtilityClient } from "@/app/lib/utility/types";
 
 export function AdminClientsTab() {
@@ -47,6 +50,27 @@ export function AdminClientsTab() {
 
   function closeForm() {
     setDraft(null);
+  }
+
+  function openClientReadingForm(client: UtilityClient) {
+    if (!client.publicToken) {
+      return;
+    }
+
+    window.open(buildClientReadingUrl(client.publicToken), "_blank", "noopener,noreferrer");
+  }
+
+  async function copyClientReadingLink(client: UtilityClient) {
+    if (!client.publicToken) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(buildClientReadingUrl(client.publicToken));
+      setFeedback({ message: "Rādījumu saite nokopēta starpliktuvē.", variant: "success" });
+    } catch {
+      setFeedback({ message: "Neizdevās nokopēt saiti.", variant: "error" });
+    }
   }
 
   async function confirmDeleteClient() {
@@ -109,6 +133,20 @@ export function AdminClientsTab() {
                 <td className="px-3 py-3 text-zinc-700">{client.meterIds.length}</td>
                 <td className="px-3 py-3">
                   <div className="flex flex-wrap gap-2">
+                    <TooltipIconButton
+                      tooltip="Atvērt klienta rādījumu formu"
+                      icon={<IconLink />}
+                      variant="secondary"
+                      onClick={() => openClientReadingForm(client)}
+                      disabled={!client.publicToken}
+                    />
+                    <TooltipIconButton
+                      tooltip="Kopēt rādījumu saiti klientam"
+                      icon={<IconCopy />}
+                      variant="secondary"
+                      onClick={() => void copyClientReadingLink(client)}
+                      disabled={!client.publicToken}
+                    />
                     <TooltipIconButton
                       tooltip="Piesaistīt skaitītājus klientam"
                       icon={<IconGauge />}

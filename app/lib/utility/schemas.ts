@@ -17,6 +17,7 @@ export const utilityClientSchema = z.object({
   clientNumber: z.string().trim().min(1).max(80),
   address: z.string().trim().min(1).max(500),
   meterIds: z.array(z.string().uuid()),
+  publicToken: z.string().uuid().optional(),
 });
 
 export const utilityMeterSchema = z
@@ -49,6 +50,10 @@ export const attachMeterClientSchema = z.object({
 
 export const publicLookupQuerySchema = z.object({
   q: z.string().trim().min(1).max(200),
+});
+
+export const publicLookupTokenQuerySchema = z.object({
+  token: z.string().trim().uuid(),
 });
 
 export const publicSubmissionSchema = z.object({

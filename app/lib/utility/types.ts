@@ -16,6 +16,7 @@ export type UtilityClient = {
   clientNumber: string;
   address: string;
   meterIds: string[];
+  publicToken: string;
 };
 
 export type UtilitySubmission = {

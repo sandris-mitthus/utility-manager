@@ -28,15 +28,6 @@ type MeterReadingFormProps = {
   onSubmissionComplete: () => void;
 };
 
-type SubmitProgressStep = "validating" | "saving" | "syncing" | "finishing";
-
-const SUBMIT_PROGRESS_LABELS: Record<SubmitProgressStep, string> = {
-  validating: "Pārbaudām ievadītos rādījumus",
-  saving: "Saglabājam rādījumus sistēmā",
-  syncing: "Sinhronizējam Google Sheet",
-  finishing: "Pabeidzam iesniegšanu",
-};
-
 type MeterReadingCardProps = {
   meter: UtilityMeter;
   value: string;
@@ -105,7 +96,6 @@ export function MeterReadingForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState(5);
-  const [submitProgressStep, setSubmitProgressStep] = useState<SubmitProgressStep | null>(null);
 
   const parsedValues = useMemo(() => {
     const result: Record<string, number | null> = {};
@@ -134,39 +124,29 @@ export function MeterReadingForm({
     event.preventDefault();
     await runPendingAction("submit", setPendingAction, async () => {
       setError(null);
-      setSubmitProgressStep("validating");
 
       const readings: Record<string, number> = {};
       for (const meter of meters) {
         const parsed = parsedValues[meter.id];
         if (parsed === null) {
           setError(`Ievadiet derīgu rādījumu skaitītājam ${meter.number}.`);
-          setSubmitProgressStep(null);
           return;
         }
         if (parsed < meter.previousReading) {
           setError(
             `Skaitītājam ${meter.number} rādījums nevar būt mazāks par iepriekšējo periodu (${formatReading(meter.previousReading)}).`,
           );
-          setSubmitProgressStep(null);
           return;
         }
         readings[meter.id] = parsed;
       }
 
-      setSubmitProgressStep("saving");
-      window.setTimeout(() => {
-        setSubmitProgressStep((current) => (current === "saving" ? "syncing" : current));
-      }, 700);
-
       const result = await submitReadings(client.id, submissionToken, readings);
       if (!result.ok) {
         setError(result.message);
-        setSubmitProgressStep(null);
         return;
       }
 
-      setSubmitProgressStep("finishing");
       setRedirectCountdown(5);
       setSuccess(true);
     });
@@ -314,20 +294,6 @@ export function MeterReadingForm({
         })}
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
-
-        {submitProgressStep ? (
-          <div
-            className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900"
-            role="status"
-            aria-live="polite"
-          >
-            <p className="font-medium">{SUBMIT_PROGRESS_LABELS[submitProgressStep]}</p>
-            <p className="mt-1 text-blue-800">
-              Google Sheets sinhronizācija ir obligāta, tāpēc lūdzu uzgaidiet, līdz
-              iesniegšana pilnībā pabeigta.
-            </p>
-          </div>
-        ) : null}
 
         <ActionButton
           type="submit"

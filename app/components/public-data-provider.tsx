@@ -18,6 +18,9 @@ type PublicDataContextValue = {
   lookupClient: (
     query: string,
   ) => Promise<{ ok: true; data: PublicLookupResult } | { ok: false; message: string }>;
+  lookupClientByToken: (
+    token: string,
+  ) => Promise<{ ok: true; data: PublicLookupResult } | { ok: false; message: string }>;
   submitReadings: (
     clientId: string,
     submissionToken: string,
@@ -50,6 +53,21 @@ export function PublicDataProvider({ children, initialSettings }: PublicDataProv
     return { ok: true as const, data: json.data };
   }, []);
 
+  const lookupClientByToken = useCallback(async (token: string) => {
+    const response = await fetch(`/api/public/lookup-by-token?token=${encodeURIComponent(token)}`);
+    const json = (await response.json()) as {
+      success?: boolean;
+      message?: string;
+      data?: PublicLookupResult;
+    };
+
+    if (!response.ok || !json.success || !json.data) {
+      return { ok: false as const, message: json.message || "Saite nav derīga vai klients nav atrasts." };
+    }
+
+    return { ok: true as const, data: json.data };
+  }, []);
+
   const submitReadings = useCallback(
     async (
       clientId: string,
@@ -76,9 +94,10 @@ export function PublicDataProvider({ children, initialSettings }: PublicDataProv
     () => ({
       settings,
       lookupClient,
+      lookupClientByToken,
       submitReadings,
     }),
-    [settings, lookupClient, submitReadings],
+    [settings, lookupClient, lookupClientByToken, submitReadings],
   );
 
   return <PublicDataContext.Provider value={value}>{children}</PublicDataContext.Provider>;

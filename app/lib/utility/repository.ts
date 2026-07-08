@@ -26,7 +26,10 @@ type ClientRow = {
   id: string;
   client_number: string;
   address: string;
+  public_token: string;
 };
+
+const CLIENT_SELECT_COLUMNS = "id, client_number, address, public_token";
 
 type MeterRow = {
   id: string;
@@ -250,6 +253,7 @@ function attachMeterIds(clients: ClientRow[], meters: UtilityMeter[]): UtilityCl
     clientNumber: client.client_number,
     address: client.address,
     meterIds: meterIdsByClientId.get(client.id) ?? [],
+    publicToken: client.public_token,
   }));
 }
 
@@ -336,7 +340,7 @@ async function syncReadingsSubmissionToGoogleSheet(
     const [clientResult, meterRows] = await Promise.all([
       supabase
         .from("clients")
-        .select("id, client_number, address")
+        .select(CLIENT_SELECT_COLUMNS)
         .eq("id", clientId)
         .maybeSingle(),
       queryMeterRows(supabase, async (columns) =>
@@ -363,6 +367,7 @@ async function syncReadingsSubmissionToGoogleSheet(
         clientNumber: clientRow.client_number,
         address: clientRow.address,
         meterIds: meters.map((meter) => meter.id),
+        publicToken: clientRow.public_token,
       },
       meters,
       readings,
@@ -411,7 +416,7 @@ async function rollbackSubmittedReadings(
 async function loadClientRows(supabase: ReturnType<typeof createAdminClient>): Promise<ClientRow[]> {
   const clientsResult = await supabase
     .from("clients")
-    .select("id, client_number, address")
+    .select(CLIENT_SELECT_COLUMNS)
     .order("client_number");
 
   if (clientsResult.error) {
@@ -511,7 +516,7 @@ async function findPublicClientRow(
 
   const exactNumber = await supabase
     .from("clients")
-    .select("id, client_number, address")
+    .select(CLIENT_SELECT_COLUMNS)
     .eq("client_number", trimmed)
     .maybeSingle();
 
@@ -526,7 +531,7 @@ async function findPublicClientRow(
   const addressPattern = `%${escapeIlike(trimmed)}%`;
   const addressMatch = await supabase
     .from("clients")
-    .select("id, client_number, address")
+    .select(CLIENT_SELECT_COLUMNS)
     .ilike("address", addressPattern)
     .order("client_number")
     .limit(1)
@@ -539,15 +544,10 @@ async function findPublicClientRow(
   return (addressMatch.data as ClientRow | null) ?? null;
 }
 
-export async function lookupPublicClientInDb(query: string): Promise<PublicLookupResult | null> {
-  requireDb();
-  const supabase = createAdminClient();
-
-  const clientRow = await findPublicClientRow(supabase, query);
-  if (!clientRow) {
-    return null;
-  }
-
+async function buildPublicLookupResult(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientRow: ClientRow,
+): Promise<PublicLookupResult> {
   const month = getCurrentMonthKey();
   const [meterRows, submissionResult] = await Promise.all([
     queryMeterRows(supabase, async (columns) =>
@@ -571,6 +571,7 @@ export async function lookupPublicClientInDb(query: string): Promise<PublicLooku
     clientNumber: clientRow.client_number,
     address: clientRow.address,
     meterIds: clientMeters.map((meter) => meter.id),
+    publicToken: clientRow.public_token,
   };
 
   return {
@@ -579,6 +580,43 @@ export async function lookupPublicClientInDb(query: string): Promise<PublicLooku
     hasSubmissionThisMonth: Boolean(submissionResult.data),
     submissionToken: createLookupSubmissionToken(client.id),
   };
+}
+
+export async function lookupPublicClientInDb(query: string): Promise<PublicLookupResult | null> {
+  requireDb();
+  const supabase = createAdminClient();
+
+  const clientRow = await findPublicClientRow(supabase, query);
+  if (!clientRow) {
+    return null;
+  }
+
+  return buildPublicLookupResult(supabase, clientRow);
+}
+
+export async function lookupPublicClientByTokenInDb(token: string): Promise<PublicLookupResult | null> {
+  requireDb();
+  const trimmed = token.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const supabase = createAdminClient();
+  const clientResult = await supabase
+    .from("clients")
+    .select(CLIENT_SELECT_COLUMNS)
+    .eq("public_token", trimmed)
+    .maybeSingle();
+
+  if (clientResult.error) {
+    throw new Error(clientResult.error.message || "Lookup failed");
+  }
+
+  if (!clientResult.data) {
+    return null;
+  }
+
+  return buildPublicLookupResult(supabase, clientResult.data as ClientRow);
 }
 
 export type PublicSubmissionValidation =
@@ -602,7 +640,7 @@ export async function validatePublicSubmissionInDb(
   const [clientResult, meterRows, submissionResult] = await Promise.all([
     supabase
       .from("clients")
-      .select("id, client_number, address")
+      .select(CLIENT_SELECT_COLUMNS)
       .eq("id", clientId)
       .maybeSingle(),
     queryMeterRows(supabase, async (columns) =>
@@ -663,6 +701,7 @@ export async function validatePublicSubmissionInDb(
       clientNumber: clientResult.data.client_number,
       address: clientResult.data.address,
       meterIds: meters.map((meter) => meter.id),
+      publicToken: clientResult.data.public_token,
     },
     meters,
     readings,
@@ -979,7 +1018,7 @@ export async function upsertClient(client: UtilityClient): Promise<UtilityClient
   const { data, error } = await supabase
     .from("clients")
     .upsert(payload)
-    .select("id, client_number, address")
+    .select(CLIENT_SELECT_COLUMNS)
     .single();
 
   if (error || !data) {
@@ -991,6 +1030,7 @@ export async function upsertClient(client: UtilityClient): Promise<UtilityClient
     clientNumber: data.client_number,
     address: data.address,
     meterIds: client.meterIds,
+    publicToken: data.public_token,
   };
 }
 

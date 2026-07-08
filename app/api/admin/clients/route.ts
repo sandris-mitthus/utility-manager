@@ -32,7 +32,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = utilityClientSchema.parse(await request.json());
-    const saved = await upsertClient(body);
+    const saved = await upsertClient({
+      ...body,
+      publicToken: body.publicToken ?? "",
+    });
     await writeAdminAuditLog({
       adminEmail: auth.admin.email,
       action: "upsert",
