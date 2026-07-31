@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.27` (see [Changelog](#changelog))
+**Current version:** `1.0.28` (see [Changelog](#changelog))
 
 ---
 
@@ -61,6 +61,7 @@ WhatsApp brīva teksta ziņas ir atļautas tikai 24 h laikā pēc saņēmēja p�
 - Safe OAuth redirect paths (`app/lib/security/safe-redirect-path.ts`)
 - **Pilns audits:** [`security-check.md`](security-check.md) — pašreizējā atzīme **8.8/10**
 - **CI (push):** `.github/workflows/ci.yml` — gitleaks, npm audit, typecheck, lint, build, security smoke; **production deploy tikai pēc `ci-passed`**
+- **npm audit politika:** bloķē `npm audit --omit=dev --audit-level=high` (viss, kas nonāk izpildlaikā); pilnais audits ar dev rīkiem ir informatīvs (`continue-on-error`), jo `brace-expansion` 5.x pārrauj ESLint `minimatch` 3.x ķēdi
 
 ---
 
@@ -348,6 +349,12 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.28
+
+- **Drošības atjauninājumi** — `next` 16.2.12 (proxy bypass, SSRF, cache confusion, DoS labojumi), `mailparser` 3.9.14 (`linkify-it` DoS), `postcss` ≥ 8.5.18 (path traversal), `sharp` ≥ 0.35.0 (libvips CVE)
+- **`gaxios` override ≥ 7.3.0** — `googleapis-common` pieprasa `gaxios` 7.1.3, kas caur `rimraf` → `glob` → `minimatch` ievelk ievainojamu `brace-expansion`; jaunākais `gaxios` šo ķēdi vairs nelieto
+- **CI** — bloķējošais `npm audit` tagad pārbauda produkcijas atkarības (`--omit=dev`); pilnais audits paliek informatīvs, jo `brace-expansion` un `js-yaml` labojumi pārrauj ESLint `minimatch` ķēdi
 
 ### v1.0.27
 
