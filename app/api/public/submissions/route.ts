@@ -2,6 +2,7 @@ import { after, NextRequest } from "next/server";
 import { verifyLookupSubmissionToken } from "@/app/lib/security/lookup-token";
 import { publicSubmissionSchema } from "@/app/lib/utility/schemas";
 import { sendSubmissionNotificationEmail } from "@/app/lib/utility/contact-email";
+import { sendSubmissionNotificationWhatsapp } from "@/app/lib/utility/whatsapp-notify";
 import { loadPublicContactSettings, submitReadingsInDb, validatePublicSubmissionInDb } from "@/app/lib/utility/repository";
 import { checkRateLimit, getRequestIp, rateLimitResponse } from "@/app/lib/security/rate-limit";
 import { writeSystemAuditLog } from "@/app/lib/security/audit-log";
@@ -104,6 +105,25 @@ export async function POST(request: NextRequest) {
         });
       } catch (emailError) {
         console.error("Submission notification email failed:", emailError);
+      }
+
+      try {
+        const result = await sendSubmissionNotificationWhatsapp({
+          clientNumber: validation.client.clientNumber,
+          address: validation.client.address,
+          month: validation.month,
+          readings: validation.meters.map((meter) => ({
+            meterNumber: meter.number,
+            type: meter.type,
+            value: body.readings[meter.id] ?? 0,
+          })),
+        });
+
+        if (!result.ok) {
+          console.error("Submission notification WhatsApp failed:", result.message);
+        }
+      } catch (whatsappError) {
+        console.error("Submission notification WhatsApp failed:", whatsappError);
       }
     });
 

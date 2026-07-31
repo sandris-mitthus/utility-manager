@@ -2,6 +2,10 @@ import { createAdminClient } from "@/app/lib/supabase/admin";
 import { isSupabaseAdminConfigured } from "@/app/lib/supabase/env";
 import { isContactEmailTransportConfigured } from "@/app/lib/utility/email-password";
 import { isContactInboxConfigured } from "@/app/lib/utility/imap-config";
+import {
+  hasStoredOrEnvWhatsappAccessToken,
+  isWhatsappApiConfigured,
+} from "@/app/lib/utility/whatsapp-config";
 import type {
   AdminContactSettings,
   ContactSettingsUpdate,
@@ -12,6 +16,7 @@ import type {
   UtilityMeter,
   UtilityState,
   UtilitySubmission,
+  WhatsappMode,
 } from "@/app/lib/utility/types";
 import { createLookupSubmissionToken } from "@/app/lib/security/lookup-token";
 import { getCurrentMonthKey, normalizeLookup } from "@/app/lib/utility/helpers";
@@ -50,6 +55,13 @@ type ContactSettingsRow = {
   reading_submission_template?: string;
   imap_host?: string;
   email_password?: string;
+  whatsapp_mode?: string;
+  whatsapp_message_template?: string;
+  whatsapp_phone_number_id?: string;
+  whatsapp_notify_number?: string;
+  whatsapp_template_name?: string;
+  whatsapp_template_language?: string;
+  whatsapp_access_token?: string;
 };
 
 type SubmissionRow = {
@@ -68,8 +80,22 @@ const METER_COLUMNS_BASE =
   "id, number, type, verification_date, client_id, location, previous_reading";
 const METER_COLUMNS_WITH_BASELINE = `${METER_COLUMNS_BASE}, baseline_reading`;
 
+const CONTACT_SETTINGS_BASE_COLUMNS = ["email", "sms_number", "whatsapp_number", "phone_number"];
+const CONTACT_SETTINGS_ADMIN_COLUMNS = ["imap_host", "email_password"];
+const READING_TEMPLATE_COLUMNS = ["reading_submission_template"];
+const WHATSAPP_PUBLIC_COLUMNS = ["whatsapp_mode", "whatsapp_message_template"];
+const WHATSAPP_ADMIN_COLUMNS = [
+  "whatsapp_phone_number_id",
+  "whatsapp_notify_number",
+  "whatsapp_template_name",
+  "whatsapp_template_language",
+  "whatsapp_access_token",
+];
+const CONTACT_SETTINGS_ATTEMPTS = 3;
+
 let meterBaselineColumnAvailable: boolean | null = null;
 let readingSubmissionTemplateColumnAvailable: boolean | null = null;
+let whatsappColumnsAvailable: boolean | null = null;
 
 function isMissingBaselineColumnError(message: string | undefined): boolean {
   if (!message) {
@@ -79,19 +105,74 @@ function isMissingBaselineColumnError(message: string | undefined): boolean {
   return message.includes("baseline_reading") && message.includes("does not exist");
 }
 
-function isMissingReadingSubmissionTemplateColumnError(message: string | undefined): boolean {
+function isMissingColumnError(message: string | undefined, column: string): boolean {
   if (!message) {
     return false;
   }
 
   return (
-    message.includes("reading_submission_template") &&
+    message.includes(column) &&
     (message.includes("does not exist") || message.includes("schema cache"))
+  );
+}
+
+function isMissingWhatsappColumnError(message: string | undefined): boolean {
+  return [...WHATSAPP_PUBLIC_COLUMNS, ...WHATSAPP_ADMIN_COLUMNS].some((column) =>
+    isMissingColumnError(message, column),
   );
 }
 
 function hasCustomReadingSubmissionTemplate(value: string | undefined): boolean {
   return Boolean(value?.trim());
+}
+
+function buildContactSettingsColumns(includeAdminFields: boolean): string {
+  const columns = [...CONTACT_SETTINGS_BASE_COLUMNS];
+
+  if (includeAdminFields) {
+    columns.push(...CONTACT_SETTINGS_ADMIN_COLUMNS);
+  }
+
+  if (readingSubmissionTemplateColumnAvailable !== false) {
+    columns.push(...READING_TEMPLATE_COLUMNS);
+  }
+
+  if (whatsappColumnsAvailable !== false) {
+    columns.push(...WHATSAPP_PUBLIC_COLUMNS);
+    if (includeAdminFields) {
+      columns.push(...WHATSAPP_ADMIN_COLUMNS);
+    }
+  }
+
+  return columns.join(", ");
+}
+
+function markOptionalContactSettingsColumnsAvailable() {
+  if (readingSubmissionTemplateColumnAvailable === null) {
+    readingSubmissionTemplateColumnAvailable = true;
+  }
+
+  if (whatsappColumnsAvailable === null) {
+    whatsappColumnsAvailable = true;
+  }
+}
+
+/** Atgriež true, ja kļūda bija par vēl nemigrētu kolonnu un pieprasījumu var atkārtot bez tās. */
+function markMissingOptionalContactSettingsColumn(message: string | undefined): boolean {
+  if (
+    readingSubmissionTemplateColumnAvailable !== false &&
+    isMissingColumnError(message, "reading_submission_template")
+  ) {
+    readingSubmissionTemplateColumnAvailable = false;
+    return true;
+  }
+
+  if (whatsappColumnsAvailable !== false && isMissingWhatsappColumnError(message)) {
+    whatsappColumnsAvailable = false;
+    return true;
+  }
+
+  return false;
 }
 
 type MeterQueryResult = {
@@ -129,56 +210,39 @@ async function queryContactSettingsRow(
   supabase: ReturnType<typeof createAdminClient>,
   options: { includeAdminFields: boolean },
 ): Promise<ContactSettingsRow> {
-  const baseColumns = "email, sms_number, whatsapp_number, phone_number";
-  const adminColumns = options.includeAdminFields ? ", imap_host, email_password" : "";
-  const withTemplateColumns = `${baseColumns}, reading_submission_template${adminColumns}`;
-  const withoutTemplateColumns = `${baseColumns}${adminColumns}`;
-
-  if (readingSubmissionTemplateColumnAvailable !== false) {
-    const withTemplate = await supabase
+  for (let attempt = 0; attempt < CONTACT_SETTINGS_ATTEMPTS; attempt += 1) {
+    const result = await supabase
       .from("contact_settings")
-      .select(withTemplateColumns)
+      .select(buildContactSettingsColumns(options.includeAdminFields))
       .eq("id", 1)
       .maybeSingle();
 
-    if (!withTemplate.error) {
-      readingSubmissionTemplateColumnAvailable = true;
+    if (!result.error) {
+      markOptionalContactSettingsColumnsAvailable();
 
-      if (!withTemplate.data) {
+      if (!result.data) {
         throw new Error("Kontaktu iestatījumi nav atrasti.");
       }
 
-      return withTemplate.data as unknown as ContactSettingsRow;
+      return result.data as unknown as ContactSettingsRow;
     }
 
-    if (isMissingReadingSubmissionTemplateColumnError(withTemplate.error.message)) {
-      readingSubmissionTemplateColumnAvailable = false;
-    } else {
-      throw new Error(withTemplate.error.message);
+    if (!markMissingOptionalContactSettingsColumn(result.error.message)) {
+      throw new Error(result.error.message);
     }
   }
 
-  const withoutTemplate = await supabase
-    .from("contact_settings")
-    .select(withoutTemplateColumns)
-    .eq("id", 1)
-    .maybeSingle();
-
-  if (withoutTemplate.error) {
-    throw new Error(withoutTemplate.error.message);
-  }
-
-  if (!withoutTemplate.data) {
-    throw new Error("Kontaktu iestatījumi nav atrasti.");
-  }
-
-  return withoutTemplate.data as unknown as ContactSettingsRow;
+  throw new Error("Neizdevās nolasīt kontaktu iestatījumus.");
 }
 
 function requireDb() {
   if (!isSupabaseAdminConfigured()) {
     throw new Error("Supabase nav konfigurēts. Pievienojiet vides mainīgos.");
   }
+}
+
+function normalizeWhatsappMode(value: string | undefined): WhatsappMode {
+  return value === "link" || value === "api" ? value : "off";
 }
 
 function mapPublicSettings(row: ContactSettingsRow): PublicContactSettings {
@@ -188,10 +252,15 @@ function mapPublicSettings(row: ContactSettingsRow): PublicContactSettings {
     whatsappNumber: row.whatsapp_number,
     phoneNumber: row.phone_number,
     readingSubmissionTemplate: row.reading_submission_template?.trim() ?? "",
+    whatsappMode: normalizeWhatsappMode(row.whatsapp_mode),
+    whatsappMessageTemplate: row.whatsapp_message_template?.trim() ?? "",
   };
 }
 
 function mapAdminSettings(row: ContactSettingsRow): AdminContactSettings {
+  const whatsappPhoneNumberId = row.whatsapp_phone_number_id?.trim() ?? "";
+  const whatsappNotifyNumber = row.whatsapp_notify_number?.trim() ?? "";
+
   return {
     ...mapPublicSettings(row),
     imapHost: row.imap_host?.trim() ?? "",
@@ -200,6 +269,16 @@ function mapAdminSettings(row: ContactSettingsRow): AdminContactSettings {
       row.email,
       row.imap_host ?? "",
       row.email_password,
+    ),
+    whatsappPhoneNumberId,
+    whatsappNotifyNumber,
+    whatsappTemplateName: row.whatsapp_template_name?.trim() ?? "",
+    whatsappTemplateLanguage: row.whatsapp_template_language?.trim() ?? "lv",
+    whatsappAccessTokenConfigured: hasStoredOrEnvWhatsappAccessToken(row.whatsapp_access_token),
+    whatsappApiConfigured: isWhatsappApiConfigured(
+      whatsappPhoneNumberId,
+      whatsappNotifyNumber,
+      row.whatsapp_access_token,
     ),
   };
 }
@@ -769,24 +848,22 @@ export async function syncGoogleSheetMonthInDb(month: string): Promise<GoogleShe
   };
 }
 
-export async function updateContactSettings(
+function buildContactSettingsUpdatePayload(
   settings: ContactSettingsUpdate,
-): Promise<AdminContactSettings> {
-  const supabase = createAdminClient();
-  const updatePayload: Record<string, string> = {
+): Record<string, string> {
+  const payload: Record<string, string> = {
     email: settings.email,
     sms_number: settings.smsNumber,
     whatsapp_number: settings.whatsappNumber,
     phone_number: settings.phoneNumber,
-    reading_submission_template: settings.readingSubmissionTemplate,
   };
 
   if (settings.imapHost !== undefined) {
-    updatePayload.imap_host = settings.imapHost.trim();
+    payload.imap_host = settings.imapHost.trim();
   }
 
   if (settings.emailPassword?.trim()) {
-    updatePayload.email_password = settings.emailPassword.trim();
+    payload.email_password = settings.emailPassword.trim();
   }
 
   if (readingSubmissionTemplateColumnAvailable === false) {
@@ -795,46 +872,68 @@ export async function updateContactSettings(
         "FAQ rādījumu teksta lauks vēl nav aktivizēts datubāzē. Palaidiet migrāciju 015_contact_settings_reading_submission_template.sql un mēģiniet vēlreiz.",
       );
     }
-    delete updatePayload.reading_submission_template;
+  } else {
+    payload.reading_submission_template = settings.readingSubmissionTemplate;
   }
 
-  const update = await supabase
-    .from("contact_settings")
-    .update(updatePayload)
-    .eq("id", 1)
-    .select(
-      "email, sms_number, whatsapp_number, phone_number, reading_submission_template, imap_host, email_password",
-    )
-    .single();
-
-  if (update.error && isMissingReadingSubmissionTemplateColumnError(update.error.message)) {
-    readingSubmissionTemplateColumnAvailable = false;
-    if (hasCustomReadingSubmissionTemplate(settings.readingSubmissionTemplate)) {
+  if (whatsappColumnsAvailable === false) {
+    if (settings.whatsappMode !== "off") {
       throw new Error(
-        "FAQ rādījumu teksta lauks vēl nav aktivizēts datubāzē. Palaidiet migrāciju 015_contact_settings_reading_submission_template.sql un mēģiniet vēlreiz.",
+        "WhatsApp iestatījumi vēl nav aktivizēti datubāzē. Palaidiet migrāciju 018_contact_settings_whatsapp_business.sql un mēģiniet vēlreiz.",
       );
     }
-    delete updatePayload.reading_submission_template;
+  } else {
+    payload.whatsapp_mode = settings.whatsappMode;
+    payload.whatsapp_message_template = settings.whatsappMessageTemplate;
 
-    const fallbackUpdate = await supabase
-      .from("contact_settings")
-      .update(updatePayload)
-      .eq("id", 1)
-      .select("email, sms_number, whatsapp_number, phone_number, imap_host, email_password")
-      .single();
-
-    if (fallbackUpdate.error || !fallbackUpdate.data) {
-      throw new Error(fallbackUpdate.error?.message || "Failed to update settings");
+    if (settings.whatsappPhoneNumberId !== undefined) {
+      payload.whatsapp_phone_number_id = settings.whatsappPhoneNumberId.trim();
     }
 
-    return mapAdminSettings(fallbackUpdate.data as ContactSettingsRow);
+    if (settings.whatsappNotifyNumber !== undefined) {
+      payload.whatsapp_notify_number = settings.whatsappNotifyNumber.trim();
+    }
+
+    if (settings.whatsappTemplateName !== undefined) {
+      payload.whatsapp_template_name = settings.whatsappTemplateName.trim();
+    }
+
+    if (settings.whatsappTemplateLanguage !== undefined) {
+      payload.whatsapp_template_language = settings.whatsappTemplateLanguage.trim();
+    }
+
+    if (settings.whatsappAccessToken?.trim()) {
+      payload.whatsapp_access_token = settings.whatsappAccessToken.trim();
+    }
   }
 
-  if (update.error || !update.data) {
-    throw new Error(update.error?.message || "Failed to update settings");
+  return payload;
+}
+
+export async function updateContactSettings(
+  settings: ContactSettingsUpdate,
+): Promise<AdminContactSettings> {
+  const supabase = createAdminClient();
+
+  for (let attempt = 0; attempt < CONTACT_SETTINGS_ATTEMPTS; attempt += 1) {
+    const update = await supabase
+      .from("contact_settings")
+      .update(buildContactSettingsUpdatePayload(settings))
+      .eq("id", 1)
+      .select(buildContactSettingsColumns(true))
+      .single();
+
+    if (!update.error && update.data) {
+      markOptionalContactSettingsColumnsAvailable();
+      return mapAdminSettings(update.data as unknown as ContactSettingsRow);
+    }
+
+    if (!markMissingOptionalContactSettingsColumn(update.error?.message)) {
+      throw new Error(update.error?.message || "Failed to update settings");
+    }
   }
 
-  return mapAdminSettings(update.data as ContactSettingsRow);
+  throw new Error("Neizdevās saglabāt kontaktu iestatījumus.");
 }
 
 export async function submitReadingsInDb(

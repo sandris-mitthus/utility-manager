@@ -2,6 +2,8 @@ import { z } from "zod";
 
 const meterTypeSchema = z.enum(["hot_water", "cold_water", "sewage"]);
 
+export const whatsappModeSchema = z.enum(["off", "link", "api"]);
+
 export const contactSettingsSchema = z.object({
   email: z.string().trim().email().max(320),
   smsNumber: z.string().trim().max(40),
@@ -10,6 +12,17 @@ export const contactSettingsSchema = z.object({
   readingSubmissionTemplate: z.string().trim().max(2000),
   imapHost: z.string().trim().max(255).optional(),
   emailPassword: z.string().max(200).optional(),
+  whatsappMode: whatsappModeSchema.default("off"),
+  whatsappMessageTemplate: z.string().trim().max(2000).default(""),
+  whatsappPhoneNumberId: z.string().trim().max(60).optional(),
+  whatsappNotifyNumber: z.string().trim().max(40).optional(),
+  whatsappTemplateName: z.string().trim().max(120).optional(),
+  whatsappTemplateLanguage: z.string().trim().max(10).optional(),
+  whatsappAccessToken: z.string().max(500).optional(),
+});
+
+export const whatsappTestMessageSchema = z.object({
+  to: z.string().trim().max(40).optional(),
 });
 
 export const utilityClientSchema = z.object({
@@ -17,7 +30,10 @@ export const utilityClientSchema = z.object({
   clientNumber: z.string().trim().min(1).max(80),
   address: z.string().trim().min(1).max(500),
   meterIds: z.array(z.string().uuid()),
-  publicToken: z.string().uuid().optional(),
+  publicToken: z.preprocess(
+    (value) => (value === "" || value === null || value === undefined ? undefined : value),
+    z.string().uuid().optional(),
+  ),
 });
 
 export const utilityMeterSchema = z

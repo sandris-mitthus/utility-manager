@@ -7,16 +7,21 @@ import {
   cardClassName,
 } from "@/app/components/ui/form-styles";
 import { IconInput } from "@/app/components/ui/icon-input";
-import { IconArrowLeft, IconGauge, IconSend } from "@/app/components/ui/icons";
+import { IconArrowLeft, IconChat, IconGauge, IconSend } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { runPendingAction } from "@/app/lib/run-pending-action";
 import {
   calculateConsumption,
   formatReading,
+  getCurrentMonthKey,
   METER_TYPE_LABELS,
   parseReadingInput,
   sanitizeReadingInput,
 } from "@/app/lib/utility/helpers";
+import {
+  buildWhatsappLinkUrl,
+  buildWhatsappReadingMessage,
+} from "@/app/lib/utility/whatsapp-message";
 import type { UtilityClient, UtilityMeter } from "@/app/lib/utility/types";
 
 type MeterReadingFormProps = {
@@ -91,10 +96,11 @@ export function MeterReadingForm({
   onBack,
   onSubmissionComplete,
 }: MeterReadingFormProps) {
-  const { submitReadings } = usePublicData();
+  const { submitReadings, sendReadingsToWhatsapp, settings } = usePublicData();
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [whatsappSent, setWhatsappSent] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState(5);
 
   const parsedValues = useMemo(() => {
@@ -105,7 +111,8 @@ export function MeterReadingForm({
     return result;
   }, [meters, values]);
 
-  const [pendingAction, setPendingAction] = useState<"submit" | null>(null);
+  const [pendingAction, setPendingAction] = useState<"submit" | "whatsapp" | null>(null);
+  const isBusy = pendingAction !== null;
 
   const handleValueChange = useCallback(
     (meterId: string, nextValue: string) => {
@@ -113,6 +120,7 @@ export function MeterReadingForm({
         ...current,
         [meterId]: sanitizeReadingInput(nextValue),
       }));
+      setWhatsappSent(false);
       if (error) {
         setError(null);
       }
@@ -120,25 +128,36 @@ export function MeterReadingForm({
     [error],
   );
 
+  /** Atgriež validētus rādījumus vai null, uzstādot kļūdas tekstu. */
+  function collectReadings(): Record<string, number> | null {
+    const readings: Record<string, number> = {};
+
+    for (const meter of meters) {
+      const parsed = parsedValues[meter.id];
+      if (parsed === null) {
+        setError(`Ievadiet derīgu rādījumu skaitītājam ${meter.number}.`);
+        return null;
+      }
+      if (parsed < meter.previousReading) {
+        setError(
+          `Skaitītājam ${meter.number} rādījums nevar būt mazāks par iepriekšējo periodu (${formatReading(meter.previousReading)}).`,
+        );
+        return null;
+      }
+      readings[meter.id] = parsed;
+    }
+
+    return readings;
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await runPendingAction("submit", setPendingAction, async () => {
       setError(null);
 
-      const readings: Record<string, number> = {};
-      for (const meter of meters) {
-        const parsed = parsedValues[meter.id];
-        if (parsed === null) {
-          setError(`Ievadiet derīgu rādījumu skaitītājam ${meter.number}.`);
-          return;
-        }
-        if (parsed < meter.previousReading) {
-          setError(
-            `Skaitītājam ${meter.number} rādījums nevar būt mazāks par iepriekšējo periodu (${formatReading(meter.previousReading)}).`,
-          );
-          return;
-        }
-        readings[meter.id] = parsed;
+      const readings = collectReadings();
+      if (!readings) {
+        return;
       }
 
       const result = await submitReadings(client.id, submissionToken, readings);
@@ -149,6 +168,48 @@ export function MeterReadingForm({
 
       setRedirectCountdown(5);
       setSuccess(true);
+    });
+  }
+
+  async function handleWhatsappSend() {
+    await runPendingAction("whatsapp", setPendingAction, async () => {
+      setError(null);
+      setWhatsappSent(false);
+
+      const readings = collectReadings();
+      if (!readings) {
+        return;
+      }
+
+      const message = buildWhatsappReadingMessage(settings.whatsappMessageTemplate, {
+        clientNumber: client.clientNumber,
+        address: client.address,
+        month: getCurrentMonthKey(),
+        readings: meters.map((meter) => ({
+          meterNumber: meter.number,
+          type: meter.type,
+          value: readings[meter.id],
+        })),
+      });
+
+      if (settings.whatsappMode === "link") {
+        const url = buildWhatsappLinkUrl(settings.whatsappNumber, message);
+        if (!url) {
+          setError("WhatsApp numurs nav norādīts. Sazinieties ar administratoru.");
+          return;
+        }
+
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      const result = await sendReadingsToWhatsapp(client.id, submissionToken, readings);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+
+      setWhatsappSent(true);
     });
   }
 
@@ -295,16 +356,44 @@ export function MeterReadingForm({
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
+        {whatsappSent ? (
+          <p className="text-sm text-emerald-700">
+            Rādījumi nosūtīti ar WhatsApp. Lai tie tiktu saglabāti sistēmā, iesniedziet tos arī
+            šeit.
+          </p>
+        ) : null}
+
         <ActionButton
           type="submit"
           variant="primary"
           className="w-full !py-3"
           loading={pendingAction === "submit"}
-          disabled={pendingAction !== null}
+          disabled={isBusy}
           icon={<IconSend />}
         >
           Iesniegt rādījumus
         </ActionButton>
+
+        {settings.whatsappMode !== "off" ? (
+          <>
+            <ActionButton
+              type="button"
+              variant="secondary"
+              className="w-full !py-3"
+              loading={pendingAction === "whatsapp"}
+              disabled={isBusy}
+              icon={<IconChat />}
+              onClick={() => void handleWhatsappSend()}
+            >
+              Nosūtīt ar WhatsApp
+            </ActionButton>
+            <p className="text-center text-xs text-zinc-500">
+              {settings.whatsappMode === "link"
+                ? "Atveras WhatsApp ar sagatavotu ziņu — jums to atliek nosūtīt."
+                : "Rādījumi tiek nosūtīti kā WhatsApp ziņa klientu apkalpošanai."}
+            </p>
+          </>
+        ) : null}
       </form>
     </div>
   );

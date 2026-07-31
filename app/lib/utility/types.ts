@@ -27,23 +27,39 @@ export type UtilitySubmission = {
   previousReadings?: Record<string, number>;
 };
 
+/** `off` — kanāls izslēgts, `link` — wa.me saite, `api` — WhatsApp Business Cloud API. */
+export type WhatsappMode = "off" | "link" | "api";
+
 export type PublicContactSettings = {
   email: string;
   smsNumber: string;
   whatsappNumber: string;
   phoneNumber: string;
   readingSubmissionTemplate: string;
+  whatsappMode: WhatsappMode;
+  whatsappMessageTemplate: string;
 };
 
 export type AdminContactSettings = PublicContactSettings & {
   imapHost: string;
   emailPasswordConfigured: boolean;
   emailInboxConfigured: boolean;
+  whatsappPhoneNumberId: string;
+  whatsappNotifyNumber: string;
+  whatsappTemplateName: string;
+  whatsappTemplateLanguage: string;
+  whatsappAccessTokenConfigured: boolean;
+  whatsappApiConfigured: boolean;
 };
 
 export type ContactSettingsUpdate = PublicContactSettings & {
   imapHost?: string;
   emailPassword?: string;
+  whatsappPhoneNumberId?: string;
+  whatsappNotifyNumber?: string;
+  whatsappTemplateName?: string;
+  whatsappTemplateLanguage?: string;
+  whatsappAccessToken?: string;
 };
 
 export type ParsedEmailReading = {

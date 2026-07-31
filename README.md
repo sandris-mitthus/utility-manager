@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.25` (see [Changelog](#changelog))
+**Current version:** `1.0.27` (see [Changelog](#changelog))
 
 ---
 
@@ -29,6 +29,18 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 2. **E-pasts** — admin (vai ārējs scheduler) ievāc nelasītos e-pastus (IMAP), parsē tekstu (Limbažu formāti), piesaista skaitītājiem un **automātiski pievieno** sadaļai „Rādījumi” (`readings_submissions`). Abi veidi dalās vienu mēneša ierakstu — pēc importa web forma rāda „jau iesniegti” līdz nākamajam kalendārajam mēnesim.
 3. **Google Sheets** — ja serverī ir Google OAuth ENV (ieteicams) vai service account fallback, katram mēnesim automātiski tiek izveidots savs Spreadsheet fails; katram klientam ir viena rinda, un e-pasta apvienošana atjaunina esošo klienta rindu.
 
+### WhatsApp Business (rezerves kanāls)
+
+Admin iestatījumos (`/admin` → Iestatījumi → WhatsApp Business) izvēlas kanāla režīmu:
+
+- **Izslēgts** — rādījumu formā WhatsApp pogas nav
+- **WhatsApp saite uz numuru** — poga atver lietotāja WhatsApp (`wa.me`) ar sagatavotu ziņu uz `contact_settings.whatsapp_number`; API atslēgas nav vajadzīgas
+- **WhatsApp Business API** — serveris nosūta ziņu caur Meta Cloud API uz paziņojumu numuru: gan pēc katra web iesnieguma (paralēli e-pasta paziņojumam), gan pēc lietotāja pieprasījuma (`POST /api/public/whatsapp`)
+
+Ziņas teksts nāk no `contact_settings.whatsapp_message_template` ar vietturiem `{client_number}`, `{address}`, `{month}`, `{readings}`. Admin sadaļā ir poga **Sūtīt testa ziņu** (`POST /api/admin/settings/whatsapp-test`).
+
+WhatsApp brīva teksta ziņas ir atļautas tikai 24 h laikā pēc saņēmēja pēdējās ziņas, tāpēc regulāriem paziņojumiem norādiet **apstiprinātu veidni** (`whatsapp_template_name`) ar vienu `{{1}}` mainīgo body daļā — tajā tiek ievietots ziņas teksts vienā rindā. WhatsApp kanāls **neveido** ierakstu `readings_submissions`; tas ir paziņojumu ceļš, un rādījumi jāiesniedz arī formā.
+
 ### Data
 
 - **Supabase** (Postgres) when env is configured
@@ -36,6 +48,7 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 - **`google_sheet_months`** — mēneša `YYYY-MM` kartējums uz automātiski izveidoto Google Spreadsheet (`013`)
 - **`email_inbox_messages`**, **`email_fetch_state`** — IMAP ievākšana, parsēšana, importa statuss (`010`, `012`)
 - **`contact_settings.email_password`**, **`imap_host`**, **`reading_submission_template`** — admin IMAP/SMTP un FAQ kopējamais rādījumu teksts (`011`, `015`); ENV rezerves variants
+- **`contact_settings.whatsapp_mode`** (`off` / `link` / `api`), **`whatsapp_phone_number_id`**, **`whatsapp_access_token`**, **`whatsapp_notify_number`**, **`whatsapp_template_name`**, **`whatsapp_template_language`**, **`whatsapp_message_template`** — WhatsApp Business kanāls (`018`); tokens un numura ID ar ENV rezerves variantu, tokens klientam netiek atgriezts
 - **`meters.baseline_reading`** — skaitītāja rādījums uz skaitītāja; netiek pārrakstīts pēc iesniegšanas (`009`); patēriņš adminā
 - **`contact_settings`**, **`clients`** (`public_token` unikālai rādījumu saitei, `017`), **`meters`** — admin CRUD (migrācijas `005`, `006` sākuma dati)
 - **`admin_users`** — administratoru e-pasta whitelist (`002`–`004`)
@@ -113,6 +126,9 @@ Copy `.env.example` → `.env.local` and fill in **real** values locally. Never 
 | `CONTACT_IMAP_HOST` | IMAP | Server only; ja nav, mēģina `imap.` no `CONTACT_SMTP_HOST` |
 | `CONTACT_IMAP_PORT` | IMAP | Noklus. `993` |
 | `CONTACT_IMAP_USER` | IMAP | Noklus. kontaktu e-pasts no `contact_settings` |
+| `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp Business | Server only; rezerve, ja `contact_settings.whatsapp_phone_number_id` ir tukšs |
+| `WHATSAPP_ACCESS_TOKEN` | WhatsApp Business | Server only; rezerve, ja DB tokens nav saglabāts |
+| `WHATSAPP_API_VERSION` | WhatsApp Business | Graph API versija, noklus. `v21.0` |
 | `CRON_SECRET` | IMAP scheduler (nav obligāts) | Aizsargā `GET /api/cron/fetch-emails` (`Authorization: Bearer …`); izmanto ārēju cron (ne Vercel) vai izlaid, ja ievāc tikai adminā |
 | `GOOGLE_SHEETS_ENABLED` | Google Sheets | `false` izslēdz sinhronizāciju arī tad, ja credentials ir iestatīti |
 | `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET` + `GOOGLE_OAUTH_REFRESH_TOKEN` | Google Sheets | Ieteicamais variants, lai mēneša failus veidotu lietotāja Google Drive kvotā |
@@ -271,7 +287,8 @@ app/
 │   │   └── fetch-emails/    # GET — IMAP + imports (CRON_SECRET; ārējs scheduler)
 │   └── public/
 │       ├── lookup/          # GET — klienta meklēšana serverī
-│       └── submissions/     # POST — rādījumi (signed token, rate limit)
+│       ├── submissions/     # POST — rādījumi (signed token, rate limit)
+│       └── whatsapp/        # POST — rādījumi kā WhatsApp ziņa (signed token, rate limit)
 ├── auth/
 │   ├── callback/
 │   └── auth-code-error/
@@ -284,7 +301,7 @@ app/
 └── lib/
     ├── auth/
     ├── security/            # rate-limit, admin-api CSRF, audit-log, lookup-token
-    ├── utility/             # repository, google-sheets-sync, parse-meter-email, match/import, …
+    ├── utility/             # repository, google-sheets-sync, parse-meter-email, whatsapp-*, …
     ├── format-date.ts
     ├── settings/
     └── supabase/
@@ -331,6 +348,16 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.27
+
+- **WhatsApp Business** — admin iestatījumos jauns kanāls ar režīmiem `wa.me` saite vai Meta Cloud API, sūtītāja numura ID, write-only piekļuves tokens, paziņojumu numurs, veidne un rediģējams ziņas teksts; migrācija `018`
+- **Rādījumu forma** — poga „Nosūtīt ar WhatsApp”: saites režīmā atver WhatsApp ar sagatavotu ziņu, API režīmā sūta caur `POST /api/public/whatsapp`
+- **Paziņojumi** — pēc web iesnieguma WhatsApp ziņa tiek sūtīta paralēli e-pastam; adminā poga „Sūtīt testa ziņu” (`POST /api/admin/settings/whatsapp-test`)
+
+### v1.0.26
+
+- **Admin klienti** — labota jauna klienta izveide, kad `publicToken` bija tukša virkne un API validācija to noraidīja
 
 ### v1.0.25
 

@@ -33,6 +33,9 @@ type AdminDataContextValue = {
   updateSettings: (
     settings: ContactSettingsUpdate,
   ) => Promise<{ ok: true; data: AdminContactSettings } | { ok: false; message: string }>;
+  sendWhatsappTestMessage: () => Promise<
+    { ok: true; message: string } | { ok: false; message: string }
+  >;
   saveClient: (client: UtilityClient) => Promise<{ ok: true } | { ok: false; message: string }>;
   deleteClient: (clientId: string) => Promise<{ ok: true } | { ok: false; message: string }>;
   saveMeter: (meter: UtilityMeter) => Promise<{ ok: true } | { ok: false; message: string }>;
@@ -234,6 +237,13 @@ export function AdminDataProvider({
         readingSubmissionTemplate: settings.readingSubmissionTemplate,
         imapHost: settings.imapHost,
         emailPassword: settings.emailPassword,
+        whatsappMode: settings.whatsappMode,
+        whatsappMessageTemplate: settings.whatsappMessageTemplate,
+        whatsappPhoneNumberId: settings.whatsappPhoneNumberId,
+        whatsappNotifyNumber: settings.whatsappNotifyNumber,
+        whatsappTemplateName: settings.whatsappTemplateName,
+        whatsappTemplateLanguage: settings.whatsappTemplateLanguage,
+        whatsappAccessToken: settings.whatsappAccessToken,
       }),
     });
 
@@ -247,11 +257,30 @@ export function AdminDataProvider({
     return { ok: true as const, data: json.data };
   }, [mutationHeaders]);
 
+  const sendWhatsappTestMessage = useCallback(async () => {
+    const response = await fetch("/api/admin/settings/whatsapp-test", {
+      method: "POST",
+      headers: mutationHeaders(),
+      body: JSON.stringify({}),
+    });
+
+    const json = (await response.json()) as { success?: boolean; message?: string };
+    if (!response.ok || !json.success) {
+      return { ok: false as const, message: json.message || "Neizdevās nosūtīt testa ziņu." };
+    }
+
+    return { ok: true as const, message: json.message || "Testa ziņa nosūtīta." };
+  }, [mutationHeaders]);
+
   const saveClient = useCallback(async (client: UtilityClient) => {
+    const { publicToken, ...clientPayload } = client;
     const response = await fetch("/api/admin/clients", {
       method: "POST",
       headers: mutationHeaders(),
-      body: JSON.stringify(client),
+      body: JSON.stringify({
+        ...clientPayload,
+        ...(publicToken ? { publicToken } : {}),
+      }),
     });
 
     const result = await readApiData<UtilityClient>(response);
@@ -358,6 +387,7 @@ export function AdminDataProvider({
       state,
       reloadState,
       updateSettings,
+      sendWhatsappTestMessage,
       saveClient,
       deleteClient,
       saveMeter,
@@ -372,6 +402,7 @@ export function AdminDataProvider({
       state,
       reloadState,
       updateSettings,
+      sendWhatsappTestMessage,
       saveClient,
       deleteClient,
       saveMeter,

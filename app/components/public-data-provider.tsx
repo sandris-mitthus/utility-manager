@@ -26,6 +26,11 @@ type PublicDataContextValue = {
     submissionToken: string,
     readings: Record<string, number>,
   ) => Promise<{ ok: true } | { ok: false; message: string }>;
+  sendReadingsToWhatsapp: (
+    clientId: string,
+    submissionToken: string,
+    readings: Record<string, number>,
+  ) => Promise<{ ok: true } | { ok: false; message: string }>;
 };
 
 const PublicDataContext = createContext<PublicDataContextValue | null>(null);
@@ -90,14 +95,37 @@ export function PublicDataProvider({ children, initialSettings }: PublicDataProv
     [],
   );
 
+  const sendReadingsToWhatsapp = useCallback(
+    async (
+      clientId: string,
+      submissionToken: string,
+      readings: Record<string, number>,
+    ): Promise<{ ok: true } | { ok: false; message: string }> => {
+      const response = await fetch("/api/public/whatsapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, submissionToken, readings }),
+      });
+
+      const json = (await response.json()) as { success?: boolean; message?: string };
+      if (!response.ok || !json.success) {
+        return { ok: false, message: json.message || "Neizdevās nosūtīt WhatsApp ziņu." };
+      }
+
+      return { ok: true };
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       settings,
       lookupClient,
       lookupClientByToken,
       submitReadings,
+      sendReadingsToWhatsapp,
     }),
-    [settings, lookupClient, lookupClientByToken, submitReadings],
+    [settings, lookupClient, lookupClientByToken, submitReadings, sendReadingsToWhatsapp],
   );
 
   return <PublicDataContext.Provider value={value}>{children}</PublicDataContext.Provider>;
