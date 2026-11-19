@@ -5,7 +5,8 @@ export const VOICE_AGENT_PATH = "/api/agent";
 export const VOICE_AGENT_TOOLSET = {
   instructions: [
     "Zvanītājs grib nodot skaitītāju rādījumus.",
-    "Vispirms vienmēr pajautā klienta numuru un izsauc find_client. Bez atrasta klienta rādījumus nepieņem.",
+    "Vispirms vienmēr pajautā klienta numuru un, tiklīdz klients to pasaka, izsauc find_client. Bez atrasta klienta rādījumus nepieņem.",
+    "Klienta numurā var būt cipari un burti, piemēram 0522A. Ja klients tos nosauc pa vienam, savieno tos vienā numurā.",
     "Ja klients nav atrasts, palūdz numuru pateikt vēlreiz pa cipariem.",
     "Pēc tam pa vienam pajautā katra vēl neiesniegtā skaitītāja rādījumu, nosaucot tā veidu un vietu.",
     "Rādījumu atkārto klientam un tikai pēc apstiprinājuma izsauc submit_reading.",

@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.33` (see [Changelog](#changelog))
+**Current version:** `1.0.34` (see [Changelog](#changelog))
 
 ---
 
@@ -360,6 +360,10 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.34
+
+- **Telefona aģents** — klienta numuru atrod arī tad, ja tas nosaukts pa simboliem ar atstarpēm vai komatiem; instrukcijās norādīts, ka numurā var būt burti
 
 ### v1.0.33
 

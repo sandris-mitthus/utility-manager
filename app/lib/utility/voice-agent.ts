@@ -75,8 +75,17 @@ function spokenMeter(meter: UtilityMeter, submitted: Record<string, number>) {
   };
 }
 
+async function lookupSpokenClient(clientNumber: string) {
+  const spoken = clientNumber.trim();
+  if (!spoken) return null;
+  const exact = await lookupPublicClientInDb(spoken);
+  if (exact) return exact;
+  const joined = spoken.replace(/[\s,.;:_-]+/g, "");
+  return joined && joined !== spoken ? lookupPublicClientInDb(joined) : null;
+}
+
 export async function findClientForAgent(clientNumber: string) {
-  const found = clientNumber.trim() ? await lookupPublicClientInDb(clientNumber) : null;
+  const found = await lookupSpokenClient(clientNumber);
   if (!found) return { found: false, message: "Klients ar šo numuru nav atrasts." };
   const settings = await loadPublicContactSettings();
   const window = getReadingWindowStatus(settings.readingWindowDays);
@@ -96,7 +105,7 @@ export type AgentSubmission =
   | { ok: true; message: string; month: string; client: UtilityClient; meter: UtilityMeter; reading: number };
 
 export async function submitReadingForAgent(clientNumber: string, meterNumber: string, reading: number): Promise<AgentSubmission> {
-  const found = clientNumber.trim() ? await lookupPublicClientInDb(clientNumber) : null;
+  const found = await lookupSpokenClient(clientNumber);
   if (!found) return { ok: false, message: "Klients ar šo numuru nav atrasts." };
   const wanted = meterNumber.replace(/\s+/g, "").toLowerCase();
   const meter = found.meters.find((item) => item.number.replace(/\s+/g, "").toLowerCase() === wanted);
