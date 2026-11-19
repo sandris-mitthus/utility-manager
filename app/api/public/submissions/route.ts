@@ -46,12 +46,16 @@ export async function POST(request: NextRequest) {
       return Response.json({ success: false, message: validation.message }, { status: validation.status });
     }
 
+    const submittedMeters = validation.meters.filter(
+      (meter) => validation.readings[meter.id] !== undefined,
+    );
+
     try {
       await submitReadingsInDb(
         body.clientId,
         validation.month,
-        body.readings,
-        Object.fromEntries(validation.meters.map((meter) => [meter.id, meter.previousReading])),
+        validation.readings,
+        Object.fromEntries(submittedMeters.map((meter) => [meter.id, meter.previousReading])),
         {
           client: validation.client,
           meters: validation.meters,
@@ -66,7 +70,7 @@ export async function POST(request: NextRequest) {
         details: {
           clientId: body.clientId,
           month: validation.month,
-          meterCount: validation.meters.length,
+          meterCount: submittedMeters.length,
           source: "public_web",
           stage: "required_google_sheet_sync_or_db_write",
           errorCode: getPublicSubmissionErrorCode(submitError),
@@ -83,7 +87,7 @@ export async function POST(request: NextRequest) {
         details: {
           clientId: body.clientId,
           month: validation.month,
-          meterCount: validation.meters.length,
+          meterCount: submittedMeters.length,
           source: "public_web",
           googleSheetSync: "required_success",
         },
@@ -97,9 +101,9 @@ export async function POST(request: NextRequest) {
           address: validation.client.address,
           month: validation.month,
           readings: Object.fromEntries(
-            validation.meters.map((meter) => [
+            submittedMeters.map((meter) => [
               meter.id,
-              { meterNumber: meter.number, value: body.readings[meter.id] ?? 0 },
+              { meterNumber: meter.number, value: validation.readings[meter.id] ?? 0 },
             ]),
           ),
         });
@@ -112,10 +116,10 @@ export async function POST(request: NextRequest) {
           clientNumber: validation.client.clientNumber,
           address: validation.client.address,
           month: validation.month,
-          readings: validation.meters.map((meter) => ({
+          readings: submittedMeters.map((meter) => ({
             meterNumber: meter.number,
             type: meter.type,
-            value: body.readings[meter.id] ?? 0,
+            value: validation.readings[meter.id] ?? 0,
           })),
         });
 

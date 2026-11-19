@@ -17,6 +17,7 @@ import {
   IconCalendar,
   IconChart,
   IconGauge,
+  IconHash,
   IconHome,
   IconLink,
   IconMapPin,
@@ -25,7 +26,7 @@ import {
 } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { useModalKeyboard } from "@/app/components/ui/use-modal-keyboard";
-import { METER_TYPE_LABELS, normalizeLookup } from "@/app/lib/utility/helpers";
+import { METER_TYPE_LABELS, normalizeLookup, roundReading } from "@/app/lib/utility/helpers";
 import {
   isoToDisplayDate,
   parseDisplayDateToIso,
@@ -50,18 +51,30 @@ function clientMatchesQuery(client: UtilityClient, query: string): boolean {
     return false;
   }
 
-  const haystack = normalizeLookup(`${client.clientNumber} ${client.address}`);
+  const haystack = normalizeLookup(
+    `${client.clientNumber} ${client.name} ${client.address} ${client.email} ${client.phone}`,
+  );
   return haystack.includes(normalized);
 }
 
 export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalProps) {
   const { state, saveMeter } = useAdminData();
+  const initialValidUntil = meter.validUntil || meter.verificationDate;
   const [number, setNumber] = useState(meter.number);
   const [type, setType] = useState<MeterType>(meter.type);
+  const [typeCode, setTypeCode] = useState(meter.typeCode);
   const [location, setLocation] = useState(meter.location);
+  const [meterAddress, setMeterAddress] = useState(meter.address);
   const [verificationDateDisplay, setVerificationDateDisplay] = useState(
-    isoToDisplayDate(meter.verificationDate),
+    isoToDisplayDate(initialValidUntil),
   );
+  const [readingRegisteredDisplay, setReadingRegisteredDisplay] = useState(
+    isoToDisplayDate(meter.readingRegisteredOn),
+  );
+  const [readingPeriodEndDisplay, setReadingPeriodEndDisplay] = useState(
+    isoToDisplayDate(meter.readingPeriodEnd),
+  );
+  const [readingRecordNumber, setReadingRecordNumber] = useState(meter.readingRecordNumber);
   const [baselineReading, setBaselineReading] = useState(meter.baselineReading);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
     isExisting ? meter.clientId || null : null,
@@ -91,11 +104,31 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
       return true;
     }
 
+    if (typeCode.trim() !== meter.typeCode.trim()) {
+      return true;
+    }
+
     if (location.trim() !== meter.location.trim()) {
       return true;
     }
 
-    if (verificationDateDisplay !== isoToDisplayDate(meter.verificationDate)) {
+    if (meterAddress.trim() !== meter.address.trim()) {
+      return true;
+    }
+
+    if (verificationDateDisplay !== isoToDisplayDate(initialValidUntil)) {
+      return true;
+    }
+
+    if (readingRegisteredDisplay !== isoToDisplayDate(meter.readingRegisteredOn)) {
+      return true;
+    }
+
+    if (readingPeriodEndDisplay !== isoToDisplayDate(meter.readingPeriodEnd)) {
+      return true;
+    }
+
+    if (readingRecordNumber.trim() !== meter.readingRecordNumber.trim()) {
       return true;
     }
 
@@ -108,11 +141,17 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
     addressQuery,
     number,
     type,
+    typeCode,
     location,
+    meterAddress,
     verificationDateDisplay,
+    readingRegisteredDisplay,
+    readingPeriodEndDisplay,
+    readingRecordNumber,
     baselineReading,
     selectedClientId,
     initialClientId,
+    initialValidUntil,
     meter,
   ]);
 
@@ -163,22 +202,43 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
     event.preventDefault();
 
     const trimmedNumber = number.trim();
-    const trimmedLocation = location.trim();
-    const verificationDate = parseDisplayDateToIso(verificationDateDisplay);
-    if (!trimmedNumber || !trimmedLocation || !selectedClientId || !verificationDate) {
+    const verificationDate = verificationDateDisplay.trim()
+      ? parseDisplayDateToIso(verificationDateDisplay)
+      : "";
+    const readingRegisteredOn = readingRegisteredDisplay.trim()
+      ? parseDisplayDateToIso(readingRegisteredDisplay)
+      : "";
+    const readingPeriodEnd = readingPeriodEndDisplay.trim()
+      ? parseDisplayDateToIso(readingPeriodEndDisplay)
+      : "";
+    if (
+      !trimmedNumber ||
+      !selectedClientId ||
+      verificationDate === null ||
+      readingRegisteredOn === null ||
+      readingPeriodEnd === null
+    ) {
       return;
     }
+
+    const roundedBaseline = roundReading(baselineReading);
 
     await runPendingAction("save", setPendingAction, async () => {
       const result = await saveMeter({
         ...meter,
         number: trimmedNumber,
         type,
-        location: trimmedLocation,
+        typeCode: typeCode.trim(),
+        location: location.trim(),
+        address: meterAddress.trim(),
         clientId: selectedClientId,
         verificationDate,
-        baselineReading,
-        previousReading: isExisting ? meter.previousReading : baselineReading,
+        validUntil: verificationDate,
+        baselineReading: roundedBaseline,
+        previousReading: isExisting ? meter.previousReading : roundedBaseline,
+        readingRegisteredOn,
+        readingPeriodEnd,
+        readingRecordNumber: readingRecordNumber.trim(),
       });
 
       if (!result.ok) {
@@ -241,6 +301,19 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
             />
           </div>
           <div>
+            <label htmlFor="meter-type-code" className={labelClassName}>
+              Tipa kods
+            </label>
+            <IconInput
+              id="meter-type-code"
+              value={typeCode}
+              onChange={(event) => setTypeCode(event.target.value)}
+              placeholder="piem., AU01"
+              icon={<IconGauge className="size-4" />}
+              wrapperClassName="mt-1"
+            />
+          </div>
+          <div>
             <label htmlFor="meter-type" className={labelClassName}>
               Veids
             </label>
@@ -260,14 +333,14 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
           </div>
           <div ref={addressInputWrapRef}>
             <label htmlFor="meter-address-query" className={labelClassName}>
-              Klients / adrese
+              Klients
             </label>
             <IconInput
               id="meter-address-query"
               type="text"
               value={addressQuery}
               autoComplete="off"
-              placeholder="piem., Brīvības iela 1 vai 12345"
+              placeholder="piem., 01012A vai Brīvības iela 1"
               role="combobox"
               aria-expanded={hintsOpen && addressHints.length > 0}
               aria-controls="meter-form-address-hints"
@@ -305,6 +378,9 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
                         <IconLink className="mt-0.5 size-3.5 shrink-0 text-zinc-400" />
                         <span>
                           <span className="block font-medium text-zinc-900">{client.address}</span>
+                          {client.name ? (
+                            <span className="block text-zinc-500">{client.name}</span>
+                          ) : null}
                           <span className="block text-zinc-500">{client.clientNumber}</span>
                         </span>
                       </button>
@@ -316,15 +392,31 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
 
             {selectedClient ? (
               <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                <p className="text-emerald-800">Izvēlētā adrese</p>
+                <p className="text-emerald-800">Izvēlētais klients</p>
                 <p className="font-medium text-emerald-950">{selectedClient.address}</p>
+                {selectedClient.name ? (
+                  <p className="text-emerald-800">{selectedClient.name}</p>
+                ) : null}
                 <p className="text-emerald-800">{selectedClient.clientNumber}</p>
               </div>
             ) : (
               <p className="mt-2 text-sm text-zinc-500">
-                Ievadiet adresi vai klienta numuru un izvēlieties no hint saraksta.
+                Ievadiet klienta kodu, vārdu vai adresi un izvēlieties no hint saraksta.
               </p>
             )}
+          </div>
+          <div>
+            <label htmlFor="meter-object-address" className={labelClassName}>
+              Objekta adrese
+            </label>
+            <IconInput
+              id="meter-object-address"
+              value={meterAddress}
+              onChange={(event) => setMeterAddress(event.target.value)}
+              placeholder="piem., Rīgas iela 13 - 1"
+              icon={<IconMapPin className="size-4" />}
+              wrapperClassName="mt-1"
+            />
           </div>
           <div>
             <label htmlFor="meter-location" className={labelClassName}>
@@ -341,7 +433,7 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
           </div>
           <div>
             <label htmlFor="meter-verification" className={labelClassName}>
-              Verifikācijas datums
+              Derīguma termiņš
             </label>
             <IconInput
               id="meter-verification"
@@ -364,11 +456,61 @@ export function MeterFormModal({ meter, isExisting, onClose }: MeterFormModalPro
               id="meter-previous"
               type="number"
               min="0"
-              step="0.1"
+              step="0.001"
               value={baselineReading}
-              onChange={(event) => setBaselineReading(Number(event.target.value))}
-              placeholder="piem., 125.4"
+              onChange={(event) => {
+                const next = Number(event.target.value);
+                setBaselineReading(Number.isFinite(next) ? roundReading(next) : 0);
+              }}
+              placeholder="piem., 125.405"
               icon={<IconChart className="size-4" />}
+              wrapperClassName="mt-1"
+            />
+          </div>
+          <div>
+            <label htmlFor="meter-reading-registered" className={labelClassName}>
+              Rādījuma reģistrācijas datums
+            </label>
+            <IconInput
+              id="meter-reading-registered"
+              type="text"
+              inputMode="numeric"
+              placeholder="DD.MM.YYYY"
+              value={readingRegisteredDisplay}
+              onChange={(event) =>
+                setReadingRegisteredDisplay(sanitizeDisplayDateInput(event.target.value))
+              }
+              icon={<IconCalendar className="size-4" />}
+              wrapperClassName="mt-1"
+            />
+          </div>
+          <div>
+            <label htmlFor="meter-reading-period-end" className={labelClassName}>
+              Rādījuma perioda beigas
+            </label>
+            <IconInput
+              id="meter-reading-period-end"
+              type="text"
+              inputMode="numeric"
+              placeholder="DD.MM.YYYY"
+              value={readingPeriodEndDisplay}
+              onChange={(event) =>
+                setReadingPeriodEndDisplay(sanitizeDisplayDateInput(event.target.value))
+              }
+              icon={<IconCalendar className="size-4" />}
+              wrapperClassName="mt-1"
+            />
+          </div>
+          <div>
+            <label htmlFor="meter-reading-record" className={labelClassName}>
+              Rādījuma ieraksta Nr.
+            </label>
+            <IconInput
+              id="meter-reading-record"
+              value={readingRecordNumber}
+              onChange={(event) => setReadingRecordNumber(event.target.value)}
+              placeholder="piem., 26085473"
+              icon={<IconHash className="size-4" />}
               wrapperClassName="mt-1"
             />
           </div>

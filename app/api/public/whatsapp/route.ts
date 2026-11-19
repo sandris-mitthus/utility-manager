@@ -46,14 +46,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const submittedMeters = validation.meters.filter(
+      (meter) => validation.readings[meter.id] !== undefined,
+    );
     const result = await sendWhatsappReadingMessage(settings, {
       clientNumber: validation.client.clientNumber,
       address: validation.client.address,
       month: validation.month,
-      readings: validation.meters.map((meter) => ({
+      readings: submittedMeters.map((meter) => ({
         meterNumber: meter.number,
         type: meter.type,
-        value: body.readings[meter.id] ?? 0,
+        value: validation.readings[meter.id] ?? 0,
       })),
     });
 
@@ -64,7 +67,7 @@ export async function POST(request: NextRequest) {
       details: {
         clientId: body.clientId,
         month: validation.month,
-        meterCount: validation.meters.length,
+        meterCount: submittedMeters.length,
         source: "public_web_whatsapp",
       },
     });

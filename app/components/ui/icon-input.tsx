@@ -9,11 +9,14 @@ const iconSlotClassName =
 
 type IconInputProps = InputHTMLAttributes<HTMLInputElement> & {
   icon: ReactNode;
+  /** Shown inside the field on the right, the same way `icon` sits on the left. */
+  suffix?: ReactNode;
   wrapperClassName?: string;
 };
 
 export function IconInput({
   icon,
+  suffix,
   className = "",
   wrapperClassName = "",
   ...props
@@ -23,8 +26,13 @@ export function IconInput({
       <span className={iconSlotClassName}>{icon}</span>
       <input
         {...props}
-        className={`${iconInputClassName} pr-3 ${className}`.trim()}
+        className={`${iconInputClassName} ${suffix ? "pr-14" : "pr-3"} ${className}`.trim()}
       />
+      {suffix ? (
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-zinc-500">
+          {suffix}
+        </span>
+      ) : null}
     </div>
   );
 }

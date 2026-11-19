@@ -1,8 +1,8 @@
-import { METER_TYPE_LABELS } from "@/app/lib/utility/helpers";
+import { formatReading, METER_TYPE_LABELS } from "@/app/lib/utility/helpers";
 import type { MeterType, WhatsappMode } from "@/app/lib/utility/types";
 
 export const WHATSAPP_MESSAGE_TEMPLATE = `Skaitītāju rādījumi
-Klienta numurs: {client_number}
+Klienta kods: {client_number}
 Adrese: {address}
 Mēnesis: {month}
 {readings}`;
@@ -28,7 +28,10 @@ export type WhatsappMessageInput = {
 
 function formatReadingLines(readings: WhatsappReadingLine[]): string {
   return readings
-    .map((reading) => `${METER_TYPE_LABELS[reading.type]} (${reading.meterNumber}): ${reading.value}`)
+    .map(
+      (reading) =>
+        `${METER_TYPE_LABELS[reading.type]} (${reading.meterNumber}): ${formatReading(reading.value)}`,
+    )
     .join("\n");
 }
 

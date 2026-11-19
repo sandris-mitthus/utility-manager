@@ -58,6 +58,9 @@ function inferMeterTypesFromLabel(label?: string): MeterType[] {
   if (/kanaliz/.test(normalized)) {
     return ["sewage"];
   }
+  if (/apkur|siltum/.test(normalized)) {
+    return ["heating"];
+  }
   if (/aukst|saldt/.test(normalized)) {
     return ["cold_water"];
   }

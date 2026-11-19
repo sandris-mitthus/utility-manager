@@ -1,10 +1,86 @@
 import type { UtilityClient, UtilityMeter, UtilityState, MeterType } from "@/app/lib/utility/types";
 
+export const READING_DECIMAL_PLACES = 3;
+
 export const METER_TYPE_LABELS: Record<MeterType, string> = {
   hot_water: "Karstais ūdens",
   cold_water: "Aukstais ūdens",
   sewage: "Kanalizācija",
+  heating: "Apkure",
 };
+
+/** Public reading form: cold water, hot water, sewage, then heating. */
+export const METER_TYPE_ORDER: MeterType[] = ["cold_water", "hot_water", "sewage", "heating"];
+
+export type ReadingFormTypeGroup = {
+  type: MeterType;
+  meters: UtilityMeter[];
+};
+
+export type ReadingFormAddressGroup = {
+  address: string;
+  types: ReadingFormTypeGroup[];
+};
+
+export function meterReadingAddress(
+  meter: Pick<UtilityMeter, "address">,
+  clientAddress: string,
+): string {
+  return meter.address.trim() || clientAddress.trim();
+}
+
+/** Sort by address, then meter type, then number. Group so the form can separate types inside each address. */
+export function groupMetersForReadingForm(
+  meters: UtilityMeter[],
+  clientAddress: string,
+): ReadingFormAddressGroup[] {
+  const sorted = [...meters].sort((left, right) => {
+    const addressCompare = meterReadingAddress(left, clientAddress).localeCompare(
+      meterReadingAddress(right, clientAddress),
+      "lv",
+    );
+    if (addressCompare !== 0) {
+      return addressCompare;
+    }
+
+    const typeCompare = METER_TYPE_ORDER.indexOf(left.type) - METER_TYPE_ORDER.indexOf(right.type);
+    if (typeCompare !== 0) {
+      return typeCompare;
+    }
+
+    return left.number.localeCompare(right.number, "lv", { numeric: true });
+  });
+
+  const groups: ReadingFormAddressGroup[] = [];
+  for (const meter of sorted) {
+    const address = meterReadingAddress(meter, clientAddress);
+    let addressGroup = groups[groups.length - 1];
+    if (!addressGroup || addressGroup.address !== address) {
+      addressGroup = { address, types: [] };
+      groups.push(addressGroup);
+    }
+
+    let typeGroup = addressGroup.types[addressGroup.types.length - 1];
+    if (!typeGroup || typeGroup.type !== meter.type) {
+      typeGroup = { type: meter.type, meters: [] };
+      addressGroup.types.push(typeGroup);
+    }
+
+    typeGroup.meters.push(meter);
+  }
+
+  return groups;
+}
+
+export function formatMeterTypeLabel(meter: Pick<UtilityMeter, "type" | "typeCode">): string {
+  const label = METER_TYPE_LABELS[meter.type];
+  return meter.typeCode ? `${label} (${meter.typeCode})` : label;
+}
+
+export function roundReading(value: number): number {
+  const factor = 10 ** READING_DECIMAL_PLACES;
+  return Math.round(value * factor) / factor;
+}
 
 export function normalizeLookup(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -74,9 +150,9 @@ export function formatMonthLabel(monthKey: string): string {
 }
 
 export function formatReading(value: number): string {
-  return value.toLocaleString("lv-LV", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
+  return roundReading(value).toLocaleString("lv-LV", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: READING_DECIMAL_PLACES,
   });
 }
 
@@ -88,7 +164,10 @@ export function sanitizeReadingInput(value: string): string {
   }
 
   const integerPart = cleaned.slice(0, separatorIndex);
-  const decimalPart = cleaned.slice(separatorIndex + 1).replace(/[^\d]/g, "");
+  const decimalPart = cleaned
+    .slice(separatorIndex + 1)
+    .replace(/[^\d]/g, "")
+    .slice(0, READING_DECIMAL_PLACES);
   const separator = cleaned[separatorIndex] ?? ",";
   return `${integerPart}${separator}${decimalPart}`;
 }
@@ -104,7 +183,7 @@ export function parseReadingInput(value: string): number | null {
     return null;
   }
 
-  return parsed;
+  return roundReading(parsed);
 }
 
 export function calculateConsumption(
@@ -115,7 +194,7 @@ export function calculateConsumption(
     return null;
   }
 
-  return Number((currentReading - previousReading).toFixed(1));
+  return roundReading(currentReading - previousReading);
 }
 
 export function hasSubmissionForMonth(

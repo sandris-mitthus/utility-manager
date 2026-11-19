@@ -165,6 +165,7 @@ export function ClientMetersModal({ client, onClose }: ClientMetersModalProps) {
             </h3>
             <p className="mt-1 text-sm text-zinc-500">
               <span className="block font-medium text-zinc-800">{client.address}</span>
+              {client.name ? <span className="block">{client.name}</span> : null}
               <span className="block">{client.clientNumber}</span>
             </p>
           </div>

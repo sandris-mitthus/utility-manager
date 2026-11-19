@@ -3,32 +3,44 @@
 import { memo, useCallback, FormEvent, useEffect, useMemo, useState } from "react";
 import { usePublicData } from "@/app/components/public-data-provider";
 import { ActionButton } from "@/app/components/ui/action-button";
+import { FeedbackToast } from "@/app/components/ui/feedback-toast";
 import {
   cardClassName,
 } from "@/app/components/ui/form-styles";
 import { IconInput } from "@/app/components/ui/icon-input";
-import { IconArrowLeft, IconChat, IconGauge, IconSend } from "@/app/components/ui/icons";
+import { IconArrowLeft, IconChat, IconChevronDown, IconGauge, IconSend } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { runPendingAction } from "@/app/lib/run-pending-action";
 import {
   calculateConsumption,
+  formatMonthLabel,
   formatReading,
   getCurrentMonthKey,
+  groupMetersForReadingForm,
   METER_TYPE_LABELS,
   parseReadingInput,
+  roundReading,
   sanitizeReadingInput,
+  type ReadingFormTypeGroup,
 } from "@/app/lib/utility/helpers";
+import {
+  getReadingWindowStatus,
+  readingWindowClosedMessage,
+} from "@/app/lib/utility/reading-window";
 import {
   buildWhatsappLinkUrl,
   buildWhatsappReadingMessage,
 } from "@/app/lib/utility/whatsapp-message";
 import type { UtilityClient, UtilityMeter } from "@/app/lib/utility/types";
 
+const READING_UNIT = "m³";
+
 type MeterReadingFormProps = {
   client: UtilityClient;
   meters: UtilityMeter[];
   submissionToken: string;
-  hasSubmissionThisMonth: boolean;
+  submittedReadings: Record<string, number>;
+  submittedPreviousReadings: Record<string, number>;
   onBack: () => void;
   onSubmissionComplete: () => void;
 };
@@ -37,6 +49,8 @@ type MeterReadingCardProps = {
   meter: UtilityMeter;
   value: string;
   consumption: number | null;
+  previousReading: number;
+  locked: boolean;
   onValueChange: (meterId: string, nextValue: string) => void;
 };
 
@@ -44,43 +58,52 @@ const MeterReadingCard = memo(function MeterReadingCard({
   meter,
   value,
   consumption,
+  previousReading,
+  locked,
   onValueChange,
 }: MeterReadingCardProps) {
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-4">
-      <div>
-        <p className="text-sm font-semibold text-zinc-900">{METER_TYPE_LABELS[meter.type]}</p>
-        <div className="mt-1 flex items-start justify-between gap-4">
-          <p className="text-xs text-zinc-500">
-            {meter.number} · {meter.location}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-zinc-900">
+            {meter.typeCode ? `${meter.typeCode} ` : ""}
+            {meter.number}
           </p>
-          <p className="shrink-0 text-right text-xs text-zinc-500">
-            Skaitītāja rādījums uz skaitītāja:{" "}
-            <span className="font-medium text-zinc-900">{formatReading(meter.previousReading)}</span>
-          </p>
+          {meter.location ? <p className="mt-1 text-xs text-zinc-500">{meter.location}</p> : null}
         </div>
+        <p className="max-w-[16rem] text-right text-xs text-zinc-500">
+          Skaitītāja rādījums iepriekšējā periodā:{" "}
+          <span className="font-medium text-zinc-900">
+            {formatReading(previousReading)} {READING_UNIT}
+          </span>
+        </p>
       </div>
 
       <div className="mt-4">
         <label htmlFor={`reading-${meter.id}`} className="sr-only">
-          Pašreizējais rādījums
+          Pašreizējais rādījums, {READING_UNIT}
         </label>
         <IconInput
           id={`reading-${meter.id}`}
           type="text"
           inputMode="decimal"
           pattern="[0-9.,]*"
-          placeholder="piem., 125.4"
+          placeholder={locked ? undefined : "piem., 125.405"}
           value={value}
+          disabled={locked}
           onChange={(event) => onValueChange(meter.id, event.target.value)}
           icon={<IconGauge className="size-4" />}
-          className="text-right text-base"
+          suffix={READING_UNIT}
+          className={`text-right text-base ${locked ? "disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-600" : ""}`}
         />
+
+        {locked ? <p className="mt-2 text-right text-xs text-zinc-500">Jau iesniegts</p> : null}
 
         <p className="mt-2 text-right text-sm text-zinc-600">
           Šī mēneša patēriņš:{" "}
           <span className="font-semibold text-zinc-900">
-            {consumption !== null ? `${formatReading(consumption)} m³` : "— m³"}
+            {consumption !== null ? `${formatReading(consumption)} ${READING_UNIT}` : `— ${READING_UNIT}`}
           </span>
         </p>
       </div>
@@ -88,18 +111,145 @@ const MeterReadingCard = memo(function MeterReadingCard({
   );
 });
 
+type AddressMeterRow = {
+  meter: UtilityMeter;
+  locked: boolean;
+  value: string;
+  previousReading: number;
+  consumption: number | null;
+};
+
+function AddressReadingBlock({
+  address,
+  panelId,
+  types,
+  rows,
+  monthLabel,
+  onValueChange,
+}: {
+  address: string;
+  panelId: string;
+  types: ReadingFormTypeGroup[];
+  rows: AddressMeterRow[];
+  monthLabel: string;
+  onValueChange: (meterId: string, nextValue: string) => void;
+}) {
+  const allSubmitted = rows.length > 0 && rows.every((row) => row.locked);
+  const [open, setOpen] = useState(!allSubmitted);
+  const expanded = !allSubmitted || open;
+  const title = address || "Skaitītāji";
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-zinc-200">
+      {allSubmitted ? (
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <span className="min-w-0 text-sm font-semibold text-zinc-900">{title}</span>
+          <IconChevronDown
+            className={`size-4 shrink-0 text-zinc-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+          />
+        </button>
+      ) : (
+        <h3 className="px-4 py-3 text-sm font-semibold text-zinc-900">{title}</h3>
+      )}
+
+      {expanded ? (
+        <div id={panelId} className="space-y-4 border-t border-zinc-200 px-4 py-4">
+          {types.map((typeGroup) => (
+            <div key={typeGroup.type} className="space-y-3">
+              <h4 className="text-sm font-semibold text-zinc-800">
+                {METER_TYPE_LABELS[typeGroup.type]}
+              </h4>
+              {typeGroup.meters.map((meter) => {
+                const row = rows.find((item) => item.meter.id === meter.id);
+                if (!row) {
+                  return null;
+                }
+
+                return (
+                  <MeterReadingCard
+                    key={meter.id}
+                    meter={meter}
+                    value={row.value}
+                    consumption={row.consumption}
+                    previousReading={row.previousReading}
+                    locked={row.locked}
+                    onValueChange={onValueChange}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div id={panelId} className="border-t border-zinc-200 px-4 py-3">
+          <ul className="space-y-2">
+            <li className="text-xs text-zinc-500">Patēriņš, {monthLabel}</li>
+            {rows.map((row) => (
+              <li
+                key={row.meter.id}
+                className="flex items-baseline justify-between gap-3 text-sm"
+              >
+                <span className="min-w-0 text-zinc-700">
+                  {METER_TYPE_LABELS[row.meter.type]} · {row.meter.number}
+                </span>
+                <span className="shrink-0 font-medium text-zinc-900">
+                  {row.consumption !== null
+                    ? `${formatReading(row.consumption)} ${READING_UNIT}`
+                    : `— ${READING_UNIT}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function readingInputValue(value: number): string {
+  return String(roundReading(value));
+}
+
 export function MeterReadingForm({
   client,
   meters,
   submissionToken,
-  hasSubmissionThisMonth,
+  submittedReadings,
+  submittedPreviousReadings,
   onBack,
   onSubmissionComplete,
 }: MeterReadingFormProps) {
   const { submitReadings, sendReadingsToWhatsapp, settings } = usePublicData();
-  const [values, setValues] = useState<Record<string, string>>({});
+  const readingWindow = getReadingWindowStatus(settings.readingWindowDays);
+  const showWhatsappSend =
+    settings.whatsappMode !== "off" && settings.whatsappNumber.trim().length > 0;
+  const allSubmitted =
+    meters.length > 0 && meters.every((meter) => submittedReadings[meter.id] !== undefined);
+  const hasLockedReading = meters.some((meter) => submittedReadings[meter.id] !== undefined);
+  const meterGroups = useMemo(
+    () => groupMetersForReadingForm(meters, client.address),
+    [client.address, meters],
+  );
+  const monthLabel = formatMonthLabel(getCurrentMonthKey());
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const meter of meters) {
+      const submitted = submittedReadings[meter.id];
+      if (submitted !== undefined) {
+        initial[meter.id] = readingInputValue(submitted);
+      }
+    }
+    return initial;
+  });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [leftUnsubmitted, setLeftUnsubmitted] = useState(false);
   const [whatsappSent, setWhatsappSent] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState(5);
 
@@ -116,23 +266,36 @@ export function MeterReadingForm({
 
   const handleValueChange = useCallback(
     (meterId: string, nextValue: string) => {
+      if (submittedReadings[meterId] !== undefined) {
+        return;
+      }
+
       setValues((current) => ({
         ...current,
         [meterId]: sanitizeReadingInput(nextValue),
       }));
       setWhatsappSent(false);
-      if (error) {
-        setError(null);
-      }
+      setError(null);
     },
-    [error],
+    [setError, submittedReadings],
   );
 
-  /** Atgriež validētus rādījumus vai null, uzstādot kļūdas tekstu. */
+  /** Atgriež jauniesniedzamos rādījumus vai null, uzstādot kļūdas tekstu. Jau iesniegtos izlaiž. */
   function collectReadings(): Record<string, number> | null {
     const readings: Record<string, number> = {};
+    let pendingCount = 0;
 
     for (const meter of meters) {
+      if (submittedReadings[meter.id] !== undefined) {
+        continue;
+      }
+
+      pendingCount += 1;
+      const raw = (values[meter.id] ?? "").trim();
+      if (!raw) {
+        continue;
+      }
+
       const parsed = parsedValues[meter.id];
       if (parsed === null) {
         setError(`Ievadiet derīgu rādījumu skaitītājam ${meter.number}.`);
@@ -145,6 +308,15 @@ export function MeterReadingForm({
         return null;
       }
       readings[meter.id] = parsed;
+    }
+
+    if (Object.keys(readings).length === 0) {
+      setError(
+        pendingCount === 0
+          ? "Rādījumi šim mēnesim jau ir iesniegti."
+          : "Ievadiet rādījumu vismaz vienam skaitītājam, kurš vēl nav iesniegts.",
+      );
+      return null;
     }
 
     return readings;
@@ -166,6 +338,11 @@ export function MeterReadingForm({
         return;
       }
 
+      const stillOpen = meters.some(
+        (meter) =>
+          submittedReadings[meter.id] === undefined && readings[meter.id] === undefined,
+      );
+      setLeftUnsubmitted(stillOpen);
       setRedirectCountdown(5);
       setSuccess(true);
     });
@@ -185,11 +362,13 @@ export function MeterReadingForm({
         clientNumber: client.clientNumber,
         address: client.address,
         month: getCurrentMonthKey(),
-        readings: meters.map((meter) => ({
-          meterNumber: meter.number,
-          type: meter.type,
-          value: readings[meter.id],
-        })),
+        readings: meters
+          .filter((meter) => readings[meter.id] !== undefined)
+          .map((meter) => ({
+            meterNumber: meter.number,
+            type: meter.type,
+            value: readings[meter.id],
+          })),
       });
 
       if (settings.whatsappMode === "link") {
@@ -214,7 +393,7 @@ export function MeterReadingForm({
   }
 
   useEffect(() => {
-    if (!success && !hasSubmissionThisMonth) {
+    if (!success && !allSubmitted) {
       return;
     }
 
@@ -227,15 +406,15 @@ export function MeterReadingForm({
       window.clearInterval(intervalId);
       window.clearTimeout(timeoutId);
     };
-  }, [hasSubmissionThisMonth, onSubmissionComplete, success]);
+  }, [allSubmitted, onSubmissionComplete, success]);
 
-  if (hasSubmissionThisMonth) {
+  if (allSubmitted) {
     return (
       <div className={`${cardClassName} text-center`}>
         <h2 className="text-lg font-semibold text-zinc-900">Rādījumi jau iesniegti</h2>
         <p className="mt-2 text-sm text-zinc-600">
           Šī mēneša rādījumi klientam{" "}
-          <span className="font-semibold text-zinc-900">Nr. {client.clientNumber}</span> jau ir
+          <span className="font-semibold text-zinc-900">{client.clientNumber}</span> jau ir
           saglabāti.
         </p>
         <p className="mt-4 text-sm text-zinc-500">
@@ -249,6 +428,24 @@ export function MeterReadingForm({
           className="mt-6"
         >
           Atpakaļ tagad
+        </ActionButton>
+      </div>
+    );
+  }
+
+  if (!readingWindow.open) {
+    return (
+      <div className={cardClassName}>
+        <h2 className="text-lg font-semibold text-zinc-900">Rādījumus vēl nevar nodot</h2>
+        <p className="mt-2 text-sm text-zinc-600">{readingWindowClosedMessage(readingWindow)}</p>
+        <ActionButton
+          type="button"
+          variant="secondary"
+          onClick={onBack}
+          icon={<IconArrowLeft />}
+          className="mt-6"
+        >
+          Atpakaļ
         </ActionButton>
       </div>
     );
@@ -272,9 +469,15 @@ export function MeterReadingForm({
             </h2>
             <p className="mt-3 text-sm text-zinc-600">
               Paldies! Rādījumi klientam{" "}
-              <span className="font-semibold text-zinc-900">Nr. {client.clientNumber}</span> ir
+              <span className="font-semibold text-zinc-900">{client.clientNumber}</span> ir
               saglabāti.
             </p>
+            {leftUnsubmitted ? (
+              <p className="mt-2 text-sm text-zinc-600">
+                Pārējos skaitītājus varēsiet iesniegt vēlāk. Jau iesniegtos rādījumus vairs nevarēs
+                labot.
+              </p>
+            ) : null}
             <p className="mt-4 text-sm text-zinc-500">
               Pēc {redirectCountdown} sek. atgriezīsim sākuma lapā.
             </p>
@@ -316,7 +519,9 @@ export function MeterReadingForm({
         <div>
           <h2 className="text-lg font-semibold text-zinc-900">Skaitītāju rādījumi</h2>
           <p className="mt-1 text-sm text-zinc-500">
-            Ievadiet pašreizējos rādījumus visiem skaitītājiem
+            {hasLockedReading
+              ? "Jau iesniegtos rādījumus nevar labot. Ievadiet atlikušos — tukšos varēsiet nodot vēlāk."
+              : "Ievadiet pašreizējos rādījumus. Tukšos skaitītājus varēsiet nodot vēlāk."}
           </p>
         </div>
         <TooltipIconButton
@@ -329,32 +534,47 @@ export function MeterReadingForm({
 
       <dl className="mt-5 grid gap-3 rounded-lg bg-zinc-50 px-4 py-3 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-zinc-500">Klienta numurs</dt>
+          <dt className="text-zinc-500">Klienta kods</dt>
           <dd className="font-medium text-zinc-900">{client.clientNumber}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Adrese</dt>
-          <dd className="font-medium text-zinc-900">{client.address}</dd>
+          <dt className="text-zinc-500">{client.name ? "Klients" : "Adrese"}</dt>
+          <dd className="font-medium text-zinc-900">{client.name || client.address}</dd>
         </div>
       </dl>
 
       <form className="mt-6 space-y-4" onSubmit={handleSubmit} noValidate>
-        {meters.map((meter) => {
-          const currentValue = parsedValues[meter.id];
-          const consumption = calculateConsumption(meter.previousReading, currentValue);
+        {meterGroups.map((group, index) => {
+          const rows = group.types.flatMap((typeGroup) =>
+            typeGroup.meters.map((meter) => {
+              const locked = submittedReadings[meter.id] !== undefined;
+              const previousReading = locked
+                ? (submittedPreviousReadings[meter.id] ?? meter.baselineReading)
+                : meter.previousReading;
+              const currentValue = locked ? submittedReadings[meter.id] : parsedValues[meter.id];
+
+              return {
+                meter,
+                locked,
+                value: values[meter.id] ?? "",
+                previousReading,
+                consumption: calculateConsumption(previousReading, currentValue ?? null),
+              };
+            }),
+          );
 
           return (
-            <MeterReadingCard
-              key={meter.id}
-              meter={meter}
-              value={values[meter.id] ?? ""}
-              consumption={consumption}
+            <AddressReadingBlock
+              key={group.address || `address-${index}`}
+              address={group.address}
+              panelId={`address-panel-${index}`}
+              types={group.types}
+              rows={rows}
+              monthLabel={monthLabel}
               onValueChange={handleValueChange}
             />
           );
         })}
-
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         {whatsappSent ? (
           <p className="text-sm text-emerald-700">
@@ -374,7 +594,7 @@ export function MeterReadingForm({
           Iesniegt rādījumus
         </ActionButton>
 
-        {settings.whatsappMode !== "off" ? (
+        {showWhatsappSend ? (
           <>
             <ActionButton
               type="button"
@@ -395,6 +615,14 @@ export function MeterReadingForm({
           </>
         ) : null}
       </form>
+
+      {error ? (
+        <FeedbackToast
+          message={error}
+          variant="error"
+          onDismiss={() => setError(null)}
+        />
+      ) : null}
     </div>
   );
 }

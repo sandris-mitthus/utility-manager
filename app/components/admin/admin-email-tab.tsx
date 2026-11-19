@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAdminData } from "@/app/components/admin-data-provider";
 import {
   FeedbackToast,
@@ -10,10 +10,12 @@ import { ActionButton } from "@/app/components/ui/action-button";
 import { ConfirmCloseDialog } from "@/app/components/ui/confirm-close-dialog";
 import {
   cardClassName,
+  labelClassName,
   statusBadgeClassName,
   tableClassName,
 } from "@/app/components/ui/form-styles";
-import { IconMail, IconRefresh, IconTrash } from "@/app/components/ui/icons";
+import { IconInput, PasswordInput } from "@/app/components/ui/icon-input";
+import { IconMail, IconRefresh, IconSave, IconTrash } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { adminMutationHeaders } from "@/app/lib/security/admin-api";
 import { runPendingAction } from "@/app/lib/run-pending-action";
@@ -74,14 +76,17 @@ type AdminEmailTabProps = {
 };
 
 export function AdminEmailTab({ initialInbox = null }: Partial<AdminEmailTabProps>) {
-  const { state, reloadState, csrfToken } = useAdminData();
+  const { state, reloadState, csrfToken, updateSettings } = useAdminData();
   const [messages, setMessages] = useState<EmailInboxMessage[]>(initialInbox?.messages ?? []);
   const [fetchState, setFetchState] = useState<EmailFetchState | null>(
     initialInbox?.fetchState ?? null,
   );
   const [pendingAction, setPendingAction] = useState<
-    "load" | "fetch" | "import" | "reparse" | "delete" | null
+    "load" | "fetch" | "import" | "reparse" | "delete" | "save" | null
   >(null);
+  const [emailDraft, setEmailDraft] = useState(state.settings.email);
+  const [imapHostDraft, setImapHostDraft] = useState(state.settings.imapHost);
+  const [emailPasswordDraft, setEmailPasswordDraft] = useState("");
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [messageToDelete, setMessageToDelete] = useState<EmailInboxMessage | null>(null);
@@ -292,8 +297,112 @@ export function AdminEmailTab({ initialInbox = null }: Partial<AdminEmailTabProp
 
   const isBusy = pendingAction !== null;
 
+  async function handleSaveEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await runPendingAction("save", setPendingAction, async () => {
+      const result = await updateSettings({
+        email: emailDraft.trim(),
+        imapHost: imapHostDraft.trim(),
+        ...(emailPasswordDraft.trim() ? { emailPassword: emailPasswordDraft.trim() } : {}),
+      });
+
+      if (!result.ok) {
+        setFeedback({ message: result.message, variant: "error" });
+        return;
+      }
+
+      setEmailDraft(result.data.email);
+      setImapHostDraft(result.data.imapHost);
+      setEmailPasswordDraft("");
+      setFeedback({ message: "E-pasta iestatījumi saglabāti.", variant: "success" });
+    });
+  }
+
   return (
     <>
+      <form onSubmit={(event) => void handleSaveEmail(event)} className={`${cardClassName} space-y-4`}>
+        <div>
+          <h2 className="text-base font-semibold text-zinc-900">E-pasta iestatījumi</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Konts, uz kuru klienti sūta rādījumus un no kura sistēma ievāc iesūtni.
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="email-settings-address" className={labelClassName}>
+              E-pasts rādījumu iesniegšanai
+            </label>
+            <IconInput
+              id="email-settings-address"
+              type="email"
+              value={emailDraft}
+              onChange={(event) => setEmailDraft(event.target.value)}
+              placeholder="piemers@pasts.lv"
+              icon={<IconMail className="size-4" />}
+              wrapperClassName="mt-1"
+            />
+          </div>
+          <div>
+            <label htmlFor="email-settings-password" className={labelClassName}>
+              E-pasta parole
+            </label>
+            <PasswordInput
+              id="email-settings-password"
+              value={emailPasswordDraft}
+              onChange={(event) => setEmailPasswordDraft(event.target.value)}
+              placeholder={
+                state.settings.emailPasswordConfigured
+                  ? "Parole saglabāta — atstājiet tukšu, lai nemainītu"
+                  : "Ievadiet e-pasta konta paroli"
+              }
+              wrapperClassName="mt-1"
+              autoComplete="new-password"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="email-settings-imap" className={labelClassName}>
+              IMAP serveris
+            </label>
+            <IconInput
+              id="email-settings-imap"
+              type="text"
+              value={imapHostDraft}
+              onChange={(event) => setImapHostDraft(event.target.value)}
+              placeholder="mail.piemers.lv"
+              icon={<IconMail className="size-4" />}
+              wrapperClassName="mt-1"
+            />
+            <p className="mt-1 text-xs text-zinc-500">
+              Serveris, kurā glabājas iesūtne. Ja tukšs, tiek lietots CONTACT_IMAP_HOST no servera
+              vides.
+            </p>
+          </div>
+          <div>
+            <p className={labelClassName}>E-pasta ievākšana</p>
+            <p className="mt-1 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+              {state.settings.emailInboxConfigured
+                ? "Gatava — e-pasts, parole un IMAP serveris ir konfigurēti."
+                : "Norādiet e-pastu, paroli un IMAP serveri, lai sistēma varētu ievākt rādījumus no iesūtnes."}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <ActionButton
+            type="submit"
+            loading={pendingAction === "save"}
+            disabled={isBusy}
+            icon={<IconSave />}
+          >
+            Saglabāt
+          </ActionButton>
+        </div>
+      </form>
+
       <div className={`${cardClassName} space-y-4`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -342,8 +451,8 @@ export function AdminEmailTab({ initialInbox = null }: Partial<AdminEmailTabProp
             <p className="font-medium text-zinc-800">IMAP statuss</p>
             <p className="mt-1">
               {inboxConfigured
-                ? `Konfigurēts (${state.settings.email}${state.settings.imapHost ? ` · ${state.settings.imapHost}` : ""})`
-                : "Nav konfigurēts. Iestatījumos norādiet e-pastu, paroli un IMAP serveri."}
+                ? `Konfigurēts (${state.settings.email}${state.settings.imapHost ? `, ${state.settings.imapHost}` : ""})`
+                : "Nav konfigurēts. Norādiet e-pastu, paroli un IMAP serveri augstāk."}
             </p>
           </div>
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">

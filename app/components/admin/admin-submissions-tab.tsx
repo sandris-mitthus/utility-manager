@@ -13,7 +13,7 @@ import {
   statusBadgeClassName,
   tableClassName,
 } from "@/app/components/ui/form-styles";
-import { IconAngleLeft, IconHome, IconRefresh } from "@/app/components/ui/icons";
+import { IconAngleLeft, IconDownload, IconHome, IconRefresh, IconSend } from "@/app/components/ui/icons";
 import { adminMutationHeaders } from "@/app/lib/security/admin-api";
 import { runPendingAction } from "@/app/lib/run-pending-action";
 import {
@@ -26,6 +26,7 @@ import {
   METER_TYPE_LABELS,
 } from "@/app/lib/utility/helpers";
 import { formatDateTimeDisplay } from "@/app/lib/format-date";
+import { buildReadingsCsv, downloadReadingsCsv } from "@/app/lib/utility/readings-csv";
 
 type FeedbackState = {
   message: string;
@@ -53,7 +54,7 @@ export function AdminSubmissionsTab() {
   const previousMonthLabel = formatMonthNameNominative(previousMonthKey);
   const isCurrentMonth = selectedMonth === currentMonth;
 
-  const { rows, submittedRows, pendingRows } = useMemo(() => {
+  const { rows, submittedRows, pendingRows, meterCount, submittedMeterCount } = useMemo(() => {
     const submissionByClientId = new Map(
       state.submissions
         .filter((submission) => submission.month === selectedMonth)
@@ -68,19 +69,36 @@ export function AdminSubmissionsTab() {
 
     const nextRows = state.clients.map((client) => {
       const submission = submissionByClientId.get(client.id);
+      const meters = metersByClientId.get(client.id) ?? [];
+      const submittedMeterCount = meters.filter(
+        (meter) => submission?.readings[meter.id] !== undefined,
+      ).length;
+      const fullySubmitted = meters.length > 0 && submittedMeterCount === meters.length;
 
       return {
         client,
-        submitted: Boolean(submission),
+        submitted: fullySubmitted,
+        partial: Boolean(submission) && !fullySubmitted,
         submission,
-        meters: metersByClientId.get(client.id) ?? [],
+        meters,
       };
     });
+
+    let meterCount = 0;
+    let submittedMeterCount = 0;
+    for (const row of nextRows) {
+      meterCount += row.meters.length;
+      submittedMeterCount += row.meters.filter(
+        (meter) => row.submission?.readings[meter.id] !== undefined,
+      ).length;
+    }
 
     return {
       rows: nextRows,
       submittedRows: nextRows.filter((row) => row.submitted),
       pendingRows: nextRows.filter((row) => !row.submitted),
+      meterCount,
+      submittedMeterCount,
     };
   }, [selectedMonth, state.clients, state.meters, state.submissions]);
   const isBusy = pendingAction !== null;
@@ -114,6 +132,16 @@ export function AdminSubmissionsTab() {
       setLoadingMonth(month);
     }
     setSelectedMonth(month);
+  }
+
+  function handleDownloadCsv() {
+    const csv = buildReadingsCsv({
+      clients: state.clients,
+      meters: state.meters,
+      submissions: state.submissions,
+      month: selectedMonth,
+    });
+    downloadReadingsCsv(`radijumi-${selectedMonth}.csv`, csv);
   }
 
   async function handleSyncGoogleSheet() {
@@ -159,6 +187,11 @@ export function AdminSubmissionsTab() {
               ? `${formatMonthLabel(selectedMonth)} tiek ielādēts...`
               : `${formatMonthLabel(selectedMonth)}, iesnieguši ${submittedRows.length} no ${rows.length} klientiem`}
           </p>
+          {isLoadingSelectedMonth ? null : (
+            <p className="mt-1 text-sm text-zinc-500">
+              iesniegti {submittedMeterCount} no {meterCount} skaitītājiem
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <ActionButton
@@ -166,11 +199,34 @@ export function AdminSubmissionsTab() {
             variant="secondary"
             icon={<IconRefresh />}
             loading={pendingAction === "google-sheet"}
-            disabled={isBusy || isLoadingSelectedMonth || submittedRows.length === 0}
+            disabled={
+              isBusy ||
+              isLoadingSelectedMonth ||
+              rows.every((row) => !row.submission)
+            }
             onClick={handleSyncGoogleSheet}
           >
             Atjaunot Google Sheet
           </ActionButton>
+          <div className="inline-flex">
+            <button
+              type="button"
+              disabled={isBusy || isLoadingSelectedMonth || submittedMeterCount === 0}
+              className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-l-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <IconSend />
+              Sūtīt
+            </button>
+            <button
+              type="button"
+              disabled={isBusy || isLoadingSelectedMonth || submittedMeterCount === 0}
+              onClick={handleDownloadCsv}
+              className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-r-lg border border-l-0 border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <IconDownload />
+              CSV
+            </button>
+          </div>
           <button
             type="button"
             className={secondaryButtonClassName}
@@ -225,9 +281,11 @@ type SubmissionRow = {
   client: {
     id: string;
     clientNumber: string;
+    name: string;
     address: string;
   };
   submitted: boolean;
+  partial: boolean;
   submission?: {
     submittedAt: string;
     readings: Record<string, number>;
@@ -270,11 +328,22 @@ function SubmissionGroup({
             <tbody className="divide-y divide-zinc-100">
               {rows.map((row) => (
                 <tr key={row.client.id} className="align-top text-zinc-800">
-                  <td className="px-3 py-3 font-medium">{row.client.clientNumber}</td>
+                  <td className="px-3 py-3">
+                    {row.client.name ? (
+                      <span className="block font-medium text-zinc-900">{row.client.name}</span>
+                    ) : null}
+                    <span className={row.client.name ? "block text-zinc-500" : "font-medium"}>
+                      {row.client.clientNumber}
+                    </span>
+                  </td>
                   <td className="px-3 py-3">{row.client.address}</td>
                   <td className="px-3 py-3">
                     <span className={statusBadgeClassName(row.submitted)}>
-                      {row.submitted ? "Iesniegts" : "Nav iesniegts"}
+                      {row.submitted
+                        ? "Iesniegts"
+                        : row.partial
+                          ? "Daļēji iesniegts"
+                          : "Nav iesniegts"}
                     </span>
                     {row.submission ? (
                       <p className="mt-1 text-xs text-zinc-500">
@@ -305,6 +374,8 @@ function SubmissionGroup({
                                 · rādījums {formatReading(submittedReading)} · patēriņš{" "}
                                 {consumption !== null ? `${formatReading(consumption)} m³` : "— m³"}
                               </>
+                            ) : row.partial ? (
+                              <> · nav iesniegts</>
                             ) : null}
                           </li>
                         );

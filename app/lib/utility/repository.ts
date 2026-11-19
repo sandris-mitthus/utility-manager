@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/app/lib/supabase/admin";
 import { isSupabaseAdminConfigured } from "@/app/lib/supabase/env";
+import { readableSupabaseError } from "@/app/lib/supabase/fetch";
 import { isContactEmailTransportConfigured } from "@/app/lib/utility/email-password";
 import { isContactInboxConfigured } from "@/app/lib/utility/imap-config";
 import {
@@ -19,7 +20,12 @@ import type {
   WhatsappMode,
 } from "@/app/lib/utility/types";
 import { createLookupSubmissionToken } from "@/app/lib/security/lookup-token";
-import { getCurrentMonthKey, normalizeLookup } from "@/app/lib/utility/helpers";
+import { getCurrentMonthKey, normalizeLookup, roundReading } from "@/app/lib/utility/helpers";
+import {
+  getReadingWindowStatus,
+  normalizeReadingWindowDays,
+  readingWindowClosedMessage,
+} from "@/app/lib/utility/reading-window";
 import {
   isGoogleSheetsSyncConfigured,
   syncSubmissionToGoogleSheet,
@@ -30,22 +36,61 @@ import {
 type ClientRow = {
   id: string;
   client_number: string;
+  name?: string | null;
   address: string;
+  email?: string | null;
+  phone?: string | null;
+  phone_extra?: string | null;
+  extra_code?: string | null;
   public_token: string;
 };
 
-const CLIENT_SELECT_COLUMNS = "id, client_number, address, public_token";
+const CLIENT_SELECT_COLUMNS =
+  "id, client_number, name, address, email, phone, phone_extra, extra_code, public_token";
+
+function mapClientRow(client: ClientRow, meterIds: string[] = []): UtilityClient {
+  return {
+    id: client.id,
+    clientNumber: client.client_number,
+    name: client.name?.trim() ?? "",
+    address: client.address,
+    email: client.email?.trim() ?? "",
+    phone: client.phone?.trim() ?? "",
+    phoneExtra: client.phone_extra?.trim() ?? "",
+    extraCode: client.extra_code?.trim() ?? "",
+    meterIds,
+    publicToken: client.public_token,
+  };
+}
 
 type MeterRow = {
   id: string;
   number: string;
   type: MeterType;
-  verification_date: string;
+  type_code?: string | null;
+  verification_date: string | null;
+  valid_until?: string | null;
   client_id: string | null;
   location: string;
+  address?: string | null;
   previous_reading: number | string;
   baseline_reading?: number | string | null;
+  reading_registered_on?: string | null;
+  reading_period_end?: string | null;
+  reading_record_number?: string | null;
 };
+
+function isoDate(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  return value.slice(0, 10);
+}
+
+function toDbDate(value: string): string | null {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
 
 type ContactSettingsRow = {
   email: string;
@@ -53,6 +98,7 @@ type ContactSettingsRow = {
   whatsapp_number: string;
   phone_number: string;
   reading_submission_template?: string;
+  reading_window_days?: number | string | null;
   imap_host?: string;
   email_password?: string;
   whatsapp_mode?: string;
@@ -78,11 +124,21 @@ export type GoogleSheetMonthSyncSummary = {
 
 const METER_COLUMNS_BASE =
   "id, number, type, verification_date, client_id, location, previous_reading";
-const METER_COLUMNS_WITH_BASELINE = `${METER_COLUMNS_BASE}, baseline_reading`;
+const METER_COLUMNS_WITH_BASELINE = [
+  METER_COLUMNS_BASE,
+  "baseline_reading",
+  "type_code",
+  "valid_until",
+  "address",
+  "reading_registered_on",
+  "reading_period_end",
+  "reading_record_number",
+].join(", ");
 
 const CONTACT_SETTINGS_BASE_COLUMNS = ["email", "sms_number", "whatsapp_number", "phone_number"];
 const CONTACT_SETTINGS_ADMIN_COLUMNS = ["imap_host", "email_password"];
 const READING_TEMPLATE_COLUMNS = ["reading_submission_template"];
+const READING_WINDOW_COLUMNS = ["reading_window_days"];
 const WHATSAPP_PUBLIC_COLUMNS = ["whatsapp_mode", "whatsapp_message_template"];
 const WHATSAPP_ADMIN_COLUMNS = [
   "whatsapp_phone_number_id",
@@ -92,9 +148,11 @@ const WHATSAPP_ADMIN_COLUMNS = [
   "whatsapp_access_token",
 ];
 const CONTACT_SETTINGS_ATTEMPTS = 3;
+const ADMIN_DATA_PAGE_SIZE = 1000;
 
 let meterBaselineColumnAvailable: boolean | null = null;
 let readingSubmissionTemplateColumnAvailable: boolean | null = null;
+let readingWindowDaysColumnAvailable: boolean | null = null;
 let whatsappColumnsAvailable: boolean | null = null;
 
 function isMissingBaselineColumnError(message: string | undefined): boolean {
@@ -137,6 +195,10 @@ function buildContactSettingsColumns(includeAdminFields: boolean): string {
     columns.push(...READING_TEMPLATE_COLUMNS);
   }
 
+  if (readingWindowDaysColumnAvailable !== false) {
+    columns.push(...READING_WINDOW_COLUMNS);
+  }
+
   if (whatsappColumnsAvailable !== false) {
     columns.push(...WHATSAPP_PUBLIC_COLUMNS);
     if (includeAdminFields) {
@@ -152,6 +214,10 @@ function markOptionalContactSettingsColumnsAvailable() {
     readingSubmissionTemplateColumnAvailable = true;
   }
 
+  if (readingWindowDaysColumnAvailable === null) {
+    readingWindowDaysColumnAvailable = true;
+  }
+
   if (whatsappColumnsAvailable === null) {
     whatsappColumnsAvailable = true;
   }
@@ -164,6 +230,14 @@ function markMissingOptionalContactSettingsColumn(message: string | undefined): 
     isMissingColumnError(message, "reading_submission_template")
   ) {
     readingSubmissionTemplateColumnAvailable = false;
+    return true;
+  }
+
+  if (
+    readingWindowDaysColumnAvailable !== false &&
+    isMissingColumnError(message, "reading_window_days")
+  ) {
+    readingWindowDaysColumnAvailable = false;
     return true;
   }
 
@@ -228,7 +302,7 @@ async function queryContactSettingsRow(
     }
 
     if (!markMissingOptionalContactSettingsColumn(result.error.message)) {
-      throw new Error(result.error.message);
+      throw new Error(readableSupabaseError(result.error.message));
     }
   }
 
@@ -252,6 +326,7 @@ function mapPublicSettings(row: ContactSettingsRow): PublicContactSettings {
     whatsappNumber: row.whatsapp_number,
     phoneNumber: row.phone_number,
     readingSubmissionTemplate: row.reading_submission_template?.trim() ?? "",
+    readingWindowDays: normalizeReadingWindowDays(Number(row.reading_window_days ?? 0)),
     whatsappMode: normalizeWhatsappMode(row.whatsapp_mode),
     whatsappMessageTemplate: row.whatsapp_message_template?.trim() ?? "",
   };
@@ -284,15 +359,24 @@ function mapAdminSettings(row: ContactSettingsRow): AdminContactSettings {
 }
 
 function mapMeter(row: MeterRow): UtilityMeter {
+  const verificationDate = isoDate(row.verification_date);
+  const validUntil = isoDate(row.valid_until) || verificationDate;
+
   return {
     id: row.id,
     number: row.number,
     type: row.type,
-    verificationDate: row.verification_date,
+    typeCode: row.type_code?.trim() ?? "",
+    verificationDate,
+    validUntil,
     clientId: row.client_id ?? "",
     location: row.location,
-    previousReading: Number(row.previous_reading),
-    baselineReading: Number(row.baseline_reading ?? row.previous_reading),
+    address: row.address?.trim() ?? "",
+    previousReading: roundReading(Number(row.previous_reading)),
+    baselineReading: roundReading(Number(row.baseline_reading ?? row.previous_reading)),
+    readingRegisteredOn: isoDate(row.reading_registered_on),
+    readingPeriodEnd: isoDate(row.reading_period_end),
+    readingRecordNumber: row.reading_record_number?.trim() ?? "",
   };
 }
 
@@ -327,13 +411,9 @@ function attachMeterIds(clients: ClientRow[], meters: UtilityMeter[]): UtilityCl
     meterIdsByClientId.set(meter.clientId, current);
   }
 
-  return clients.map((client) => ({
-    id: client.id,
-    clientNumber: client.client_number,
-    address: client.address,
-    meterIds: meterIdsByClientId.get(client.id) ?? [],
-    publicToken: client.public_token,
-  }));
+  return clients.map((client) =>
+    mapClientRow(client, meterIdsByClientId.get(client.id) ?? []),
+  );
 }
 
 type StoredSubmissionReadings =
@@ -353,6 +433,21 @@ function isWrappedSubmissionReadings(
     typeof raw.values === "object" &&
     raw.values !== null
   );
+}
+
+function coerceReading(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return roundReading(value);
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return roundReading(parsed);
+    }
+  }
+
+  return undefined;
 }
 
 function mapSubmission(row: SubmissionRow): UtilitySubmission {
@@ -441,13 +536,10 @@ async function syncReadingsSubmissionToGoogleSheet(
     await syncSubmission(supabase, {
       month,
       submittedAt,
-      client: {
-        id: clientRow.id,
-        clientNumber: clientRow.client_number,
-        address: clientRow.address,
-        meterIds: meters.map((meter) => meter.id),
-        publicToken: clientRow.public_token,
-      },
+      client: mapClientRow(
+        clientRow,
+        meters.map((meter) => meter.id),
+      ),
       meters,
       readings,
       previousReadings,
@@ -457,6 +549,81 @@ async function syncReadingsSubmissionToGoogleSheet(
     if (required) {
       throw error;
     }
+  }
+}
+
+async function updateMeterPreviousReadings(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  readings: Record<string, number>,
+): Promise<void> {
+  const meterResults = await Promise.all(
+    Object.entries(readings).map(([meterId, reading]) =>
+      supabase
+        .from("meters")
+        .update({ previous_reading: roundReading(reading) })
+        .eq("id", meterId)
+        .eq("client_id", clientId),
+    ),
+  );
+
+  const meterError = meterResults.find((result) => result.error)?.error;
+  if (meterError) {
+    throw new Error(meterError.message);
+  }
+}
+
+function previousReadingsForSubmitted(
+  readings: Record<string, number>,
+  previousReadings: Record<string, number>,
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const meterId of Object.keys(readings)) {
+    const previous = previousReadings[meterId];
+    if (previous !== undefined) {
+      result[meterId] = previous;
+    }
+  }
+  return result;
+}
+
+function readStoredSubmissionValues(raw: SubmissionRow["readings"]): {
+  values: Record<string, number>;
+  previous: Record<string, number>;
+} {
+  const parsed =
+    typeof raw === "string" ? (JSON.parse(raw) as StoredSubmissionReadings) : raw;
+  if (isWrappedSubmissionReadings(parsed)) {
+    return {
+      values: parsed.values,
+      previous: parsed.previous ?? {},
+    };
+  }
+
+  return {
+    values: parsed as Record<string, number>,
+    previous: {},
+  };
+}
+
+async function restoreMeterPreviousReadings(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  previousReadings: Record<string, number>,
+): Promise<void> {
+  const rollbackResults = await Promise.all(
+    Object.entries(previousReadings).map(([meterId, reading]) =>
+      supabase
+        .from("meters")
+        .update({ previous_reading: roundReading(reading) })
+        .eq("id", meterId)
+        .eq("client_id", clientId),
+    ),
+  );
+
+  const rollbackError = rollbackResults.find((result) => result.error)?.error;
+  if (rollbackError) {
+    throw new Error(rollbackError.message);
   }
 }
 
@@ -476,39 +643,50 @@ async function rollbackSubmittedReadings(
     throw new Error(deleteError.message);
   }
 
-  const rollbackResults = await Promise.all(
-    Object.entries(previousReadings).map(([meterId, reading]) =>
-      supabase
-        .from("meters")
-        .update({ previous_reading: reading })
-        .eq("id", meterId)
-        .eq("client_id", clientId),
-    ),
-  );
-
-  const rollbackError = rollbackResults.find((result) => result.error)?.error;
-  if (rollbackError) {
-    throw new Error(rollbackError.message);
-  }
+  await restoreMeterPreviousReadings(supabase, clientId, previousReadings);
 }
 
 async function loadClientRows(supabase: ReturnType<typeof createAdminClient>): Promise<ClientRow[]> {
-  const clientsResult = await supabase
-    .from("clients")
-    .select(CLIENT_SELECT_COLUMNS)
-    .order("client_number");
+  const rows: ClientRow[] = [];
 
-  if (clientsResult.error) {
-    throw new Error(clientsResult.error.message || "Failed to load utility clients");
+  for (let from = 0; ; from += ADMIN_DATA_PAGE_SIZE) {
+    const clientsResult = await supabase
+      .from("clients")
+      .select(CLIENT_SELECT_COLUMNS)
+      .order("client_number")
+      .order("id")
+      .range(from, from + ADMIN_DATA_PAGE_SIZE - 1);
+
+    if (clientsResult.error) {
+      throw new Error(clientsResult.error.message || "Failed to load utility clients");
+    }
+
+    const page = (clientsResult.data ?? []) as ClientRow[];
+    rows.push(...page);
+    if (page.length < ADMIN_DATA_PAGE_SIZE) {
+      return rows;
+    }
   }
-
-  return (clientsResult.data ?? []) as ClientRow[];
 }
 
 async function loadMappedMeters(supabase: ReturnType<typeof createAdminClient>): Promise<UtilityMeter[]> {
-  const meterRows = await queryMeterRows(supabase, async (columns) =>
-    supabase.from("meters").select(columns).order("number"),
-  );
+  const meterRows: MeterRow[] = [];
+
+  for (let from = 0; ; from += ADMIN_DATA_PAGE_SIZE) {
+    const page = await queryMeterRows(supabase, async (columns) =>
+      supabase
+        .from("meters")
+        .select(columns)
+        .order("number")
+        .order("id")
+        .range(from, from + ADMIN_DATA_PAGE_SIZE - 1),
+    );
+
+    meterRows.push(...page);
+    if (page.length < ADMIN_DATA_PAGE_SIZE) {
+      break;
+    }
+  }
 
   return meterRows.map(mapMeter);
 }
@@ -529,18 +707,30 @@ async function loadSubmissionsForMonth(
   submissionsMonth: string,
   meters: UtilityMeter[],
 ): Promise<UtilitySubmission[]> {
-  const submissionsResult = await supabase
-    .from("readings_submissions")
-    .select("client_id, month, submitted_at, readings")
-    .eq("month", submissionsMonth)
-    .order("submitted_at", { ascending: false });
+  const submissionRows: SubmissionRow[] = [];
 
-  if (submissionsResult.error) {
-    throw new Error(submissionsResult.error.message || "Failed to load utility submissions");
+  for (let from = 0; ; from += ADMIN_DATA_PAGE_SIZE) {
+    const submissionsResult = await supabase
+      .from("readings_submissions")
+      .select("client_id, month, submitted_at, readings")
+      .eq("month", submissionsMonth)
+      .order("submitted_at", { ascending: false })
+      .order("client_id")
+      .range(from, from + ADMIN_DATA_PAGE_SIZE - 1);
+
+    if (submissionsResult.error) {
+      throw new Error(submissionsResult.error.message || "Failed to load utility submissions");
+    }
+
+    const page = (submissionsResult.data ?? []) as SubmissionRow[];
+    submissionRows.push(...page);
+    if (page.length < ADMIN_DATA_PAGE_SIZE) {
+      break;
+    }
   }
 
   return enrichSubmissionsWithBaselines(
-    (submissionsResult.data as SubmissionRow[]).map(mapSubmission),
+    submissionRows.map(mapSubmission),
     meters,
   );
 }
@@ -607,20 +797,17 @@ async function findPublicClientRow(
     return exactNumber.data as ClientRow;
   }
 
-  const addressPattern = `%${escapeIlike(trimmed)}%`;
-  const addressMatch = await supabase
+  const caseInsensitive = await supabase
     .from("clients")
     .select(CLIENT_SELECT_COLUMNS)
-    .ilike("address", addressPattern)
-    .order("client_number")
-    .limit(1)
+    .ilike("client_number", escapeIlike(trimmed))
     .maybeSingle();
 
-  if (addressMatch.error) {
-    throw new Error(addressMatch.error.message || "Lookup failed");
+  if (caseInsensitive.error) {
+    throw new Error(caseInsensitive.error.message || "Lookup failed");
   }
 
-  return (addressMatch.data as ClientRow | null) ?? null;
+  return (caseInsensitive.data as ClientRow | null) ?? null;
 }
 
 async function buildPublicLookupResult(
@@ -634,7 +821,7 @@ async function buildPublicLookupResult(
     ),
     supabase
       .from("readings_submissions")
-      .select("id")
+      .select("client_id, month, submitted_at, readings")
       .eq("client_id", clientRow.id)
       .eq("month", month)
       .maybeSingle(),
@@ -645,18 +832,37 @@ async function buildPublicLookupResult(
   }
 
   const clientMeters = meterRows.map(mapMeter);
-  const client = {
-    id: clientRow.id,
-    clientNumber: clientRow.client_number,
-    address: clientRow.address,
-    meterIds: clientMeters.map((meter) => meter.id),
-    publicToken: clientRow.public_token,
-  };
+  const client = mapClientRow(
+    clientRow,
+    clientMeters.map((meter) => meter.id),
+  );
+  const submission = submissionResult.data
+    ? mapSubmission(submissionResult.data as SubmissionRow)
+    : null;
+  const submittedReadings: Record<string, number> = {};
+  const submittedPreviousReadings: Record<string, number> = {};
+
+  for (const meter of clientMeters) {
+    const reading = coerceReading(submission?.readings[meter.id]);
+    if (reading === undefined) {
+      continue;
+    }
+
+    submittedReadings[meter.id] = reading;
+    const previous = coerceReading(submission?.previousReadings?.[meter.id]);
+    if (previous !== undefined) {
+      submittedPreviousReadings[meter.id] = previous;
+    }
+  }
 
   return {
     client,
     meters: clientMeters,
-    hasSubmissionThisMonth: Boolean(submissionResult.data),
+    hasSubmissionThisMonth:
+      clientMeters.length > 0 &&
+      clientMeters.every((meter) => submittedReadings[meter.id] !== undefined),
+    submittedReadings,
+    submittedPreviousReadings,
     submissionToken: createLookupSubmissionToken(client.id),
   };
 }
@@ -727,7 +933,7 @@ export async function validatePublicSubmissionInDb(
     ),
     supabase
       .from("readings_submissions")
-      .select("id")
+      .select("client_id, month, submitted_at, readings")
       .eq("client_id", clientId)
       .eq("month", month)
       .maybeSingle(),
@@ -741,6 +947,12 @@ export async function validatePublicSubmissionInDb(
     return { ok: false, status: 404, message: "Klients nav atrasts." };
   }
 
+  const publicSettings = await loadPublicContactSettings();
+  const readingWindow = getReadingWindowStatus(publicSettings.readingWindowDays);
+  if (!readingWindow.open) {
+    return { ok: false, status: 403, message: readingWindowClosedMessage(readingWindow) };
+  }
+
   const meters = meterRows.map(mapMeter);
   if (meters.length === 0) {
     return { ok: false, status: 400, message: "Klientam nav piesaistītu skaitītāju." };
@@ -750,19 +962,36 @@ export async function validatePublicSubmissionInDb(
     throw new Error(submissionResult.error.message);
   }
 
-  if (submissionResult.data) {
+  const existingSubmission = submissionResult.data
+    ? mapSubmission(submissionResult.data as SubmissionRow)
+    : null;
+  const existingReadings = existingSubmission?.readings ?? {};
+  const meterById = new Map(meters.map((meter) => [meter.id, meter]));
+  const pendingMeters = meters.filter((meter) => coerceReading(existingReadings[meter.id]) === undefined);
+
+  if (meters.length > 0 && pendingMeters.length === 0) {
     return { ok: false, status: 409, message: "Rādījumi šim mēnesim jau ir iesniegti." };
   }
 
-  for (const meter of meters) {
-    const current = readings[meter.id];
-    if (current === undefined) {
-      return {
-        ok: false,
-        status: 400,
-        message: `Ievadiet rādījumu visiem skaitītājiem (${meter.number}).`,
-      };
+  const acceptedReadings: Record<string, number> = {};
+  for (const [meterId, current] of Object.entries(readings)) {
+    const meter = meterById.get(meterId);
+    if (!meter) {
+      return { ok: false, status: 400, message: "Norādīts skaitītājs, kas nepieder klientam." };
     }
+
+    const alreadySubmitted = coerceReading(existingReadings[meterId]);
+    if (alreadySubmitted !== undefined) {
+      if (alreadySubmitted !== roundReading(current)) {
+        return {
+          ok: false,
+          status: 409,
+          message: `Skaitītāja ${meter.number} rādījums jau ir iesniegts un to nevar labot.`,
+        };
+      }
+      continue;
+    }
+
     if (current < meter.previousReading) {
       return {
         ok: false,
@@ -770,20 +999,27 @@ export async function validatePublicSubmissionInDb(
         message: `Skaitītājam ${meter.number} rādījums nevar būt mazāks par iepriekšējo periodu.`,
       };
     }
+
+    acceptedReadings[meterId] = roundReading(current);
+  }
+
+  if (Object.keys(acceptedReadings).length === 0) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Ievadiet rādījumu vismaz vienam skaitītājam, kurš vēl nav iesniegts.",
+    };
   }
 
   return {
     ok: true,
     month,
-    client: {
-      id: clientResult.data.id,
-      clientNumber: clientResult.data.client_number,
-      address: clientResult.data.address,
-      meterIds: meters.map((meter) => meter.id),
-      publicToken: clientResult.data.public_token,
-    },
+    client: mapClientRow(
+      clientResult.data as ClientRow,
+      meters.map((meter) => meter.id),
+    ),
     meters,
-    readings,
+    readings: acceptedReadings,
   };
 }
 
@@ -850,13 +1086,24 @@ export async function syncGoogleSheetMonthInDb(month: string): Promise<GoogleShe
 
 function buildContactSettingsUpdatePayload(
   settings: ContactSettingsUpdate,
-): Record<string, string> {
-  const payload: Record<string, string> = {
-    email: settings.email,
-    sms_number: settings.smsNumber,
-    whatsapp_number: settings.whatsappNumber,
-    phone_number: settings.phoneNumber,
-  };
+): Record<string, string | number> {
+  const payload: Record<string, string | number> = {};
+
+  if (settings.email !== undefined) {
+    payload.email = settings.email;
+  }
+
+  if (settings.smsNumber !== undefined) {
+    payload.sms_number = settings.smsNumber;
+  }
+
+  if (settings.whatsappNumber !== undefined) {
+    payload.whatsapp_number = settings.whatsappNumber;
+  }
+
+  if (settings.phoneNumber !== undefined) {
+    payload.phone_number = settings.phoneNumber;
+  }
 
   if (settings.imapHost !== undefined) {
     payload.imap_host = settings.imapHost.trim();
@@ -866,45 +1113,79 @@ function buildContactSettingsUpdatePayload(
     payload.email_password = settings.emailPassword.trim();
   }
 
-  if (readingSubmissionTemplateColumnAvailable === false) {
-    if (hasCustomReadingSubmissionTemplate(settings.readingSubmissionTemplate)) {
-      throw new Error(
-        "FAQ rādījumu teksta lauks vēl nav aktivizēts datubāzē. Palaidiet migrāciju 015_contact_settings_reading_submission_template.sql un mēģiniet vēlreiz.",
-      );
+  if (settings.readingSubmissionTemplate !== undefined) {
+    if (readingSubmissionTemplateColumnAvailable === false) {
+      if (hasCustomReadingSubmissionTemplate(settings.readingSubmissionTemplate)) {
+        throw new Error(
+          "FAQ rādījumu teksta lauks vēl nav aktivizēts datubāzē. Palaidiet migrāciju 015_contact_settings_reading_submission_template.sql un mēģiniet vēlreiz.",
+        );
+      }
+    } else {
+      payload.reading_submission_template = settings.readingSubmissionTemplate;
     }
-  } else {
-    payload.reading_submission_template = settings.readingSubmissionTemplate;
   }
 
-  if (whatsappColumnsAvailable === false) {
-    if (settings.whatsappMode !== "off") {
-      throw new Error(
-        "WhatsApp iestatījumi vēl nav aktivizēti datubāzē. Palaidiet migrāciju 018_contact_settings_whatsapp_business.sql un mēģiniet vēlreiz.",
-      );
+  if (settings.readingWindowDays !== undefined) {
+    if (readingWindowDaysColumnAvailable === false) {
+      if (normalizeReadingWindowDays(settings.readingWindowDays) > 0) {
+        throw new Error(
+          "Rādījumu perioda lauks vēl nav aktivizēts datubāzē. Palaidiet migrāciju 021_reading_window_days.sql un mēģiniet vēlreiz.",
+        );
+      }
+    } else {
+      payload.reading_window_days = normalizeReadingWindowDays(settings.readingWindowDays);
     }
-  } else {
-    payload.whatsapp_mode = settings.whatsappMode;
-    payload.whatsapp_message_template = settings.whatsappMessageTemplate;
+  }
 
-    if (settings.whatsappPhoneNumberId !== undefined) {
-      payload.whatsapp_phone_number_id = settings.whatsappPhoneNumberId.trim();
-    }
+  const updatesWhatsapp =
+    settings.whatsappMode !== undefined ||
+    settings.whatsappMessageTemplate !== undefined ||
+    settings.whatsappPhoneNumberId !== undefined ||
+    settings.whatsappNotifyNumber !== undefined ||
+    settings.whatsappTemplateName !== undefined ||
+    settings.whatsappTemplateLanguage !== undefined ||
+    Boolean(settings.whatsappAccessToken?.trim());
 
-    if (settings.whatsappNotifyNumber !== undefined) {
-      payload.whatsapp_notify_number = settings.whatsappNotifyNumber.trim();
-    }
+  if (updatesWhatsapp) {
+    if (whatsappColumnsAvailable === false) {
+      if (settings.whatsappMode && settings.whatsappMode !== "off") {
+        throw new Error(
+          "WhatsApp iestatījumi vēl nav aktivizēti datubāzē. Palaidiet migrāciju 018_contact_settings_whatsapp_business.sql un mēģiniet vēlreiz.",
+        );
+      }
+    } else {
+      if (settings.whatsappMode !== undefined) {
+        payload.whatsapp_mode = settings.whatsappMode;
+      }
 
-    if (settings.whatsappTemplateName !== undefined) {
-      payload.whatsapp_template_name = settings.whatsappTemplateName.trim();
-    }
+      if (settings.whatsappMessageTemplate !== undefined) {
+        payload.whatsapp_message_template = settings.whatsappMessageTemplate;
+      }
 
-    if (settings.whatsappTemplateLanguage !== undefined) {
-      payload.whatsapp_template_language = settings.whatsappTemplateLanguage.trim();
-    }
+      if (settings.whatsappPhoneNumberId !== undefined) {
+        payload.whatsapp_phone_number_id = settings.whatsappPhoneNumberId.trim();
+      }
 
-    if (settings.whatsappAccessToken?.trim()) {
-      payload.whatsapp_access_token = settings.whatsappAccessToken.trim();
+      if (settings.whatsappNotifyNumber !== undefined) {
+        payload.whatsapp_notify_number = settings.whatsappNotifyNumber.trim();
+      }
+
+      if (settings.whatsappTemplateName !== undefined) {
+        payload.whatsapp_template_name = settings.whatsappTemplateName.trim();
+      }
+
+      if (settings.whatsappTemplateLanguage !== undefined) {
+        payload.whatsapp_template_language = settings.whatsappTemplateLanguage.trim();
+      }
+
+      if (settings.whatsappAccessToken?.trim()) {
+        payload.whatsapp_access_token = settings.whatsappAccessToken.trim();
+      }
     }
+  }
+
+  if (Object.keys(payload).length === 0) {
+    throw new Error("Nav ko saglabāt.");
   }
 
   return payload;
@@ -952,7 +1233,7 @@ export async function submitReadingsInDb(
 
   const { data: existing, error: existingError } = await supabase
     .from("readings_submissions")
-    .select("id")
+    .select("id, readings, submitted_at")
     .eq("client_id", clientId)
     .eq("month", month)
     .maybeSingle();
@@ -961,46 +1242,88 @@ export async function submitReadingsInDb(
     throw new Error(existingError.message);
   }
 
+  let sheetReadings = readings;
+  let sheetPreviousReadings = previousReadingsForSubmitted(readings, previousReadings);
+  const appliedReadings: Record<string, number> = {};
+
   if (existing) {
-    throw new Error("Rādījumi šim mēnesim jau ir iesniegti.");
-  }
+    const stored = readStoredSubmissionValues(existing.readings as SubmissionRow["readings"]);
+    const mergedValues = { ...stored.values };
+    const mergedPrevious = { ...stored.previous };
 
-  const { error: insertError } = await supabase.from("readings_submissions").insert({
-    client_id: clientId,
-    month,
-    submitted_at: submittedAt,
-    readings: {
-      values: readings,
-      previous: previousReadings,
-    },
-  });
+    for (const [meterId, reading] of Object.entries(readings)) {
+      const current = coerceReading(stored.values[meterId]);
+      const rounded = roundReading(reading);
+      if (current !== undefined) {
+        if (current !== rounded) {
+          throw new Error("Iesniegtais rādījums jau ir saglabāts un to nevar labot.");
+        }
+        continue;
+      }
 
-  if (insertError) {
-    throw new Error(insertError.message);
-  }
-
-  try {
-    const meterResults = await Promise.all(
-      Object.entries(readings).map(([meterId, reading]) =>
-        supabase
-          .from("meters")
-          .update({ previous_reading: reading })
-          .eq("id", meterId)
-          .eq("client_id", clientId),
-      ),
-    );
-
-    const meterError = meterResults.find((result) => result.error)?.error;
-    if (meterError) {
-      throw new Error(meterError.message);
+      mergedValues[meterId] = rounded;
+      appliedReadings[meterId] = rounded;
+      if (mergedPrevious[meterId] === undefined && previousReadings[meterId] !== undefined) {
+        mergedPrevious[meterId] = previousReadings[meterId];
+      }
     }
 
+    if (Object.keys(appliedReadings).length === 0) {
+      throw new Error("Rādījumi šim mēnesim jau ir iesniegti.");
+    }
+
+    sheetReadings = mergedValues;
+    sheetPreviousReadings = mergedPrevious;
+
+    const { error: updateError } = await supabase
+      .from("readings_submissions")
+      .update({
+        readings: {
+          values: mergedValues,
+          previous: mergedPrevious,
+        },
+        submitted_at: submittedAt,
+      })
+      .eq("id", existing.id);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+  } else {
+    for (const [meterId, reading] of Object.entries(readings)) {
+      appliedReadings[meterId] = roundReading(reading);
+    }
+
+    const { error: insertError } = await supabase.from("readings_submissions").insert({
+      client_id: clientId,
+      month,
+      submitted_at: submittedAt,
+      readings: {
+        values: appliedReadings,
+        previous: sheetPreviousReadings,
+      },
+    });
+
+    if (insertError) {
+      const duplicate = insertError.code === "23505";
+      throw new Error(
+        duplicate
+          ? "Daļa rādījumu jau ir iesniegta. Atveriet formu vēlreiz un iesniedziet tikai atlikušos skaitītājus."
+          : insertError.message,
+      );
+    }
+  }
+
+  const rollbackPrevious = previousReadingsForSubmitted(appliedReadings, previousReadings);
+
+  try {
+    await updateMeterPreviousReadings(supabase, clientId, appliedReadings);
     await syncReadingsSubmissionToGoogleSheet(
       supabase,
       clientId,
       month,
-      readings,
-      previousReadings,
+      sheetReadings,
+      sheetPreviousReadings,
       submittedAt,
       validatedSubmission,
       requireGoogleSheetSync,
@@ -1008,7 +1331,21 @@ export async function submitReadingsInDb(
   } catch (error) {
     if (requireGoogleSheetSync) {
       try {
-        await rollbackSubmittedReadings(supabase, clientId, month, previousReadings);
+        if (existing) {
+          const { error: restoreError } = await supabase
+            .from("readings_submissions")
+            .update({
+              readings: existing.readings,
+              submitted_at: existing.submitted_at,
+            })
+            .eq("id", existing.id);
+          if (restoreError) {
+            throw new Error(restoreError.message);
+          }
+          await restoreMeterPreviousReadings(supabase, clientId, rollbackPrevious);
+        } else {
+          await rollbackSubmittedReadings(supabase, clientId, month, rollbackPrevious);
+        }
       } catch (rollbackError) {
         console.error("Failed to roll back readings after Google Sheets sync failure:", rollbackError);
       }
@@ -1085,7 +1422,7 @@ export async function upsertEmailReadingsInDb(
   for (const [meterId, reading] of Object.entries(readings)) {
     const { error: meterError } = await supabase
       .from("meters")
-      .update({ previous_reading: reading })
+      .update({ previous_reading: roundReading(reading) })
       .eq("id", meterId)
       .eq("client_id", clientId);
 
@@ -1111,7 +1448,12 @@ export async function upsertClient(client: UtilityClient): Promise<UtilityClient
   const payload = {
     id: client.id,
     client_number: client.clientNumber.trim(),
+    name: client.name.trim(),
     address: client.address.trim(),
+    email: client.email.trim(),
+    phone: client.phone.trim(),
+    phone_extra: client.phoneExtra.trim(),
+    extra_code: client.extraCode.trim(),
   };
 
   const { data, error } = await supabase
@@ -1124,13 +1466,7 @@ export async function upsertClient(client: UtilityClient): Promise<UtilityClient
     throw new Error(error?.message || "Failed to save client");
   }
 
-  return {
-    id: data.id,
-    clientNumber: data.client_number,
-    address: data.address,
-    meterIds: client.meterIds,
-    publicToken: data.public_token,
-  };
+  return mapClientRow(data as ClientRow, client.meterIds);
 }
 
 export async function deleteClientById(clientId: string): Promise<void> {
@@ -1144,26 +1480,33 @@ export async function deleteClientById(clientId: string): Promise<void> {
 
 export async function upsertMeter(meter: UtilityMeter): Promise<UtilityMeter> {
   const supabase = createAdminClient();
+  const validUntil = toDbDate(meter.validUntil || meter.verificationDate);
   const basePayload = {
     id: meter.id,
     number: meter.number.trim(),
     type: meter.type,
-    verification_date: meter.verificationDate,
+    type_code: meter.typeCode.trim(),
+    verification_date: toDbDate(meter.verificationDate) ?? validUntil,
+    valid_until: validUntil,
     client_id: meter.clientId || null,
     location: meter.location.trim(),
-    previous_reading: meter.previousReading,
+    address: meter.address.trim(),
+    previous_reading: roundReading(meter.previousReading),
+    reading_registered_on: toDbDate(meter.readingRegisteredOn),
+    reading_period_end: toDbDate(meter.readingPeriodEnd),
+    reading_record_number: meter.readingRecordNumber.trim(),
   };
 
   if (meterBaselineColumnAvailable !== false) {
     const withBaseline = await supabase
       .from("meters")
-      .upsert({ ...basePayload, baseline_reading: meter.baselineReading })
+      .upsert({ ...basePayload, baseline_reading: roundReading(meter.baselineReading) })
       .select(METER_COLUMNS_WITH_BASELINE)
       .single();
 
     if (!withBaseline.error && withBaseline.data) {
       meterBaselineColumnAvailable = true;
-      return mapMeter(withBaseline.data as MeterRow);
+      return mapMeter(withBaseline.data as unknown as MeterRow);
     }
 
     if (

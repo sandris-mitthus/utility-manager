@@ -32,7 +32,7 @@ export const dangerButtonClassName =
   "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50";
 
 export const tabButtonClassName = (active: boolean) =>
-  `inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+  `inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
     active
       ? "bg-zinc-900 text-white"
       : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"

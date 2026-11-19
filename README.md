@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.28` (see [Changelog](#changelog))
+**Current version:** `1.0.32` (see [Changelog](#changelog))
 
 ---
 
@@ -18,28 +18,29 @@ Next.js app for utility readings — public client lookup, admin panel, Supabase
 
 ### Starter UI
 
-- **Sākums** (`/`) — klienta meklēšana (`GET /api/public/lookup`) un rādījumu iesniegšana ar signed token; **tiešā saite** `/r/{public_token}` atver to pašu formu bez meklēšanas; ja šī mēneša rādījumi jau ir (web vai e-pasts), rāda „Rādījumi jau iesniegti” ar automātisku countdown atgriešanos uz sākumu; FAQ kontakti un kopējamais rādījumu paraugs tiek ņemti no admin iestatījumiem
-- **Administrācija** (`/admin`) — klienti (ar pogām atvērt/kopēt rādījumu saiti), skaitītāji, iesniegtie rādījumi, **e-pasta rādījumi** (IMAP, parsēšana, automātisks imports), kontaktu iestatījumi; CSRF + rate limit admin API
+- **Sākums** (`/`) — meklēšana pēc klienta koda (`GET /api/public/lookup`) un rādījumu iesniegšana ar signed token; **tiešā saite** `/r/{public_token}` atver to pašu formu bez meklēšanas; skaitītāji ir pa adresēm un veidiem, ar m³; jau nodotos rādījumus nevar labot, bet atlikušos var iesniegt vēlāk; ja visi šī mēneša rādījumi ir iesniegti, rāda „Rādījumi jau iesniegti” ar automātisku countdown atgriešanos uz sākumu; validācijas kļūdas rāda toast; FAQ kontakti un kopējamais rādījumu paraugs tiek ņemti no admin iestatījumiem
+- **Administrācija** — katrai sadaļai ir savs URL: `/admin/submissions`, `/admin/clients`, `/admin/meters`; **Iestatījumi** apakšizvēlnē ir iestatījumi, e-pasts, WhatsApp, **Integrācijas** (Resend) un **API** (telefona aģents); `/admin` novirza uz rādījumiem; saraksti ielādē visus ierakstus; joslā e-pasts ir labajā pusē un saīsinās, ja neietilpst; CSRF + rate limit admin API
 - **App nav** — app name from `app_settings.app_name` (fallback: “Utility Manager”)
 - **SectionPage** layout helper for new screens
 
-### Rādījumu nodošana (2 veidi)
+### Rādījumu nodošana
 
-1. **Web** — klients meklē adresi/numuru vai atver personīgo saiti `/r/{public_token}`, aizpilda formu (`POST /api/public/submissions`)
-2. **E-pasts** — admin (vai ārējs scheduler) ievāc nelasītos e-pastus (IMAP), parsē tekstu (Limbažu formāti), piesaista skaitītājiem un **automātiski pievieno** sadaļai „Rādījumi” (`readings_submissions`). Abi veidi dalās vienu mēneša ierakstu — pēc importa web forma rāda „jau iesniegti” līdz nākamajam kalendārajam mēnesim.
-3. **Google Sheets** — ja serverī ir Google OAuth ENV (ieteicams) vai service account fallback, katram mēnesim automātiski tiek izveidots savs Spreadsheet fails; katram klientam ir viena rinda, un e-pasta apvienošana atjaunina esošo klienta rindu.
+1. **Web** — klients ievada klienta kodu vai atver personīgo saiti `/r/{public_token}`, aizpilda formu (`POST /api/public/submissions`). Rādījums var būt ar 3 zīmēm aiz komata. Jau iesniegtu skaitītāju šajā mēnesī vairs nevar labot, bet pārējos var nodot vēlāk. Ja adminā norādītas pēdējās X mēneša dienas, ārpus šī perioda iesniegšana ir slēgta.
+2. **E-pasts** — admin (vai ārējs scheduler) ievāc nelasītos e-pastus (IMAP), parsē tekstu (Limbažu formāti), piesaista skaitītājiem un **automātiski pievieno** sadaļai „Rādījumi” (`readings_submissions`). Konta adrese, parole un IMAP serveris ir sadaļā `/admin/email`. Abi veidi dalās vienu mēneša ierakstu — pēc importa web forma rāda „jau iesniegti” līdz nākamajam kalendārajam mēnesim.
+3. **Telefona aģents** — AI Receptionist aģents zvanā pajautā klienta numuru, atrod klientu un pa vienam pieņem skaitītāju rādījumus (`GET`/`POST /api/agent`, Bearer atslēga). Rādījumi iziet tās pašas pārbaudes kā web formā, un pēc tiem aiziet tie paši paziņojumi. Adrese, atslēga, ieslēgšana un jaunas atslēgas ģenerēšana ir sadaļā `/admin/api`.
+4. **Google Sheets** — ja serverī ir Google OAuth ENV (ieteicams) vai service account fallback, katram mēnesim automātiski tiek izveidots savs Spreadsheet fails; katram klientam ir viena rinda, un e-pasta apvienošana atjaunina esošo klienta rindu.
 
 ### WhatsApp Business (rezerves kanāls)
 
-Admin iestatījumos (`/admin` → Iestatījumi → WhatsApp Business) izvēlas kanāla režīmu:
+WhatsApp sadaļā (`/admin/whatsapp`) izvēlas kanāla režīmu:
 
-- **Izslēgts** — rādījumu formā WhatsApp pogas nav
+- **Izslēgts** vai tukšs WhatsApp numurs — rādījumu formā WhatsApp pogas nav
 - **WhatsApp saite uz numuru** — poga atver lietotāja WhatsApp (`wa.me`) ar sagatavotu ziņu uz `contact_settings.whatsapp_number`; API atslēgas nav vajadzīgas
 - **WhatsApp Business API** — serveris nosūta ziņu caur Meta Cloud API uz paziņojumu numuru: gan pēc katra web iesnieguma (paralēli e-pasta paziņojumam), gan pēc lietotāja pieprasījuma (`POST /api/public/whatsapp`)
 
 Ziņas teksts nāk no `contact_settings.whatsapp_message_template` ar vietturiem `{client_number}`, `{address}`, `{month}`, `{readings}`. Admin sadaļā ir poga **Sūtīt testa ziņu** (`POST /api/admin/settings/whatsapp-test`).
 
-WhatsApp brīva teksta ziņas ir atļautas tikai 24 h laikā pēc saņēmēja pēdējās ziņas, tāpēc regulāriem paziņojumiem norādiet **apstiprinātu veidni** (`whatsapp_template_name`) ar vienu `{{1}}` mainīgo body daļā — tajā tiek ievietots ziņas teksts vienā rindā. WhatsApp kanāls **neveido** ierakstu `readings_submissions`; tas ir paziņojumu ceļš, un rādījumi jāiesniedz arī formā.
+WhatsApp brīva teksta ziņas ir atļautas tikai 24 h laikā pēc saņēmēja pēdējās ziņas, tāpēc regulāriem paziņojumiem norādiet **apstiprinātu veidni** (`whatsapp_template_name`) ar vienu `{{1}}` mainīgo body daļā — tajā tiek ievietots ziņas teksts vienā rindā. Izejošais paziņojums pats **neveido** ierakstu `readings_submissions`. Ienākošās WhatsApp ziņas admin sadaļā var parsēt un importēt rādījumos, ja sūtītāja numurs sakrīt ar klienta tālruni.
 
 ### Data
 
@@ -51,6 +52,9 @@ WhatsApp brīva teksta ziņas ir atļautas tikai 24 h laikā pēc saņēmēja p�
 - **`contact_settings.whatsapp_mode`** (`off` / `link` / `api`), **`whatsapp_phone_number_id`**, **`whatsapp_access_token`**, **`whatsapp_notify_number`**, **`whatsapp_template_name`**, **`whatsapp_template_language`**, **`whatsapp_message_template`** — WhatsApp Business kanāls (`018`); tokens un numura ID ar ENV rezerves variantu, tokens klientam netiek atgriezts
 - **`meters.baseline_reading`** — skaitītāja rādījums uz skaitītāja; netiek pārrakstīts pēc iesniegšanas (`009`); patēriņš adminā
 - **`contact_settings`**, **`clients`** (`public_token` unikālai rādījumu saitei, `017`), **`meters`** — admin CRUD (migrācijas `005`, `006` sākuma dati)
+- **Klientu reģistrs** (`019`, `020`) — klienta vārds, e-pasts, tālruņi, skaitītāja tipa kods, derīguma termiņš, objekta adrese un apkure; rādījumi glabājas ar 3 zīmēm aiz komata
+- **`contact_settings.reading_window_days`** (`021`) — `0` nozīmē visu mēnesi, citādi rādījumus drīkst nodot tikai pēdējās tik dienas (Eiropas/Rīgas laiks)
+- **`site_integrations`** (`022`, `023`) — Resend: sūtītāja e-pasts, API atslēga un Reply-To; atslēga paliek serverī. Ieslēgta integrācija sūta rādījumu paziņojuma e-pastu; citādi paliek SMTP. Telefona aģenta piekļuves atslēga (`voice_agent`) paliek serverī; `GET/POST /api/agent` atrod klientu un saglabā rādījumu
 - **`admin_users`** — administratoru e-pasta whitelist (`002`–`004`)
 - App tables use **service-role server access** with RLS deny policies for browser clients
 - `npm run db:migrate` applies only **pending** migrations (tracked in `public.schema_migrations`); pēc migrācijas automātiski pārlādē PostgREST kešu
@@ -281,9 +285,16 @@ app/
 │   ├── page.tsx             # Client lookup + readings from DB (PublicDataProvider)
 │   └── admin/
 │       ├── layout.tsx       # Admin auth gate + AdminDataProvider
-│       └── page.tsx         # AdminPanel
+│       ├── page.tsx         # redirect → /admin/submissions
+│       ├── submissions/     # iesniegtie rādījumi, CSV
+│       ├── clients/
+│       ├── meters/
+│       ├── email/
+│       ├── whatsapp/
+│       ├── integrations/    # Resend
+│       └── settings/
 ├── api/
-│   ├── admin/               # settings, clients, meters, email/inbox, submissions/google-sheet (auth + CSRF)
+│   ├── admin/               # settings, clients, meters, email/inbox, integrations, submissions/google-sheet (auth + CSRF)
 │   ├── cron/
 │   │   └── fetch-emails/    # GET — IMAP + imports (CRON_SECRET; ārējs scheduler)
 │   └── public/
@@ -349,6 +360,28 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.32
+
+- **Telefona aģents** — AI Receptionist var pieņemt skaitītāju rādījumus zvanā: tas atrod klientu pēc numura un rādījumu saglabā tikai pēc apstiprinājuma
+- **API sadaļa** — Iestatījumu apakšizvēlnē ir adrese un piekļuves atslēga ar kopēšanu, ieslēgšanu un jaunas atslēgas ģenerēšanu (migrācija `023`)
+
+### v1.0.31
+
+- **E-pasts un WhatsApp** — konta un kanāla iestatījumi ir savās sadaļās; kopējos iestatījumos paliek periods, tālruņi un FAQ teksts
+- **Rādījumi** — pie CSV ir poga Sūtīt; tā pagaidām neko nesūta
+
+### v1.0.30
+
+- **Daļēja iesniegšana** — forma grupē skaitītājus pa adresēm un veidiem, rāda m³ un ļauj nodot tikai vēl neiesniegtos rādījumus
+- **Admin rādījumi** — katrai izvēlnei ir savs URL, redzams iesniegto skaitītāju skaits, un CSV lejupielādē tikai šī mēneša iesniegtos rādījumus klienta tabulas kolonnās
+- **Resend** — Iestatījumu apakšizvēlnē ir Integrācijas ar sūtītāja e-pastu un API atslēgu; ieslēgta tā sūta rādījumu paziņojumus
+
+### v1.0.29
+
+- **Klientu reģistrs** — klienta kods, kontakti, skaitītāja derīgums, objekta adrese, apkure un rādījumi ar 3 zīmēm aiz komata; publiskā meklēšana ir tikai pēc klienta koda
+- **Rādījumu periods** — adminā var norādīt, ka rādījumus drīkst nodot tikai pēdējās X mēneša dienas; ārpus perioda forma un serveris iesniegšanu nepieņem
+- **Admin** — saraksti rāda visus klientus un skaitītājus, kļūdas parādās toast, WhatsApp bloks ir tikai ar numuru, un e-pasts joslas labajā pusē saīsinās dinamiski
 
 ### v1.0.28
 

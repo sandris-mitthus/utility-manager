@@ -10,9 +10,10 @@ import {
   labelClassName,
 } from "@/app/components/ui/form-styles";
 import { IconInput } from "@/app/components/ui/icon-input";
-import { IconArrowRight, IconMapPin } from "@/app/components/ui/icons";
+import { IconArrowRight, IconHash } from "@/app/components/ui/icons";
 import { runPendingAction } from "@/app/lib/run-pending-action";
 import { buildFaqItems } from "@/app/lib/utility/faq-items";
+import { readingWindowHint } from "@/app/lib/utility/reading-window";
 import type { PublicLookupResult } from "@/app/lib/utility/types";
 
 export function ContractLookupPanel() {
@@ -39,7 +40,7 @@ export function ContractLookupPanel() {
     void runPendingAction("submit", setPendingAction, async () => {
       const trimmed = clientLookup.trim();
       if (!trimmed) {
-        setError("Ievadiet klienta numuru vai adresi.");
+        setError("Ievadiet klienta kodu.");
         setLookupResult(null);
         return;
       }
@@ -63,7 +64,8 @@ export function ContractLookupPanel() {
           client={lookupResult.client}
           meters={lookupResult.meters}
           submissionToken={lookupResult.submissionToken}
-          hasSubmissionThisMonth={lookupResult.hasSubmissionThisMonth}
+          submittedReadings={lookupResult.submittedReadings}
+          submittedPreviousReadings={lookupResult.submittedPreviousReadings}
           onBack={() => resetLookup()}
           onSubmissionComplete={() => resetLookup(true)}
         />
@@ -76,23 +78,26 @@ export function ContractLookupPanel() {
       <div className={cardClassName}>
         <div className="text-center">
           <h2 className="text-lg font-semibold text-zinc-900">
-            Ievadiet klienta numuru vai adresi
+            Ievadiet klienta kodu
           </h2>
+          {settings.readingWindowDays > 0 ? (
+            <p className="mt-2 text-sm text-zinc-500">{readingWindowHint(settings.readingWindowDays)}</p>
+          ) : null}
         </div>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit} noValidate>
           <div>
             <label htmlFor="client-lookup" className={labelClassName}>
-              Klienta numurs vai adrese
+              Klienta kods
             </label>
             <IconInput
               id="client-lookup"
               name="clientLookup"
               type="text"
               inputMode="text"
-              autoComplete="street-address"
+              autoComplete="off"
               spellCheck={false}
-              placeholder="piem., 12345 vai Brīvības iela 1, Rīga"
+              placeholder="piem., 01012A"
               value={clientLookup}
               onChange={(event) => {
                 setClientLookup(event.target.value);
@@ -102,7 +107,7 @@ export function ContractLookupPanel() {
               }}
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? "client-lookup-error" : undefined}
-              icon={<IconMapPin className="size-4" />}
+              icon={<IconHash className="size-4" />}
               wrapperClassName="mt-2"
               className={
                 error ? "border-red-300 focus:border-red-400 focus:ring-red-100" : ""
@@ -130,7 +135,7 @@ export function ContractLookupPanel() {
 
       <FaqAccordion
         items={faqItems}
-        subtitle="Atbildes par klienta numuru, adresi un rādījumu iesniegšanu."
+        subtitle="Atbildes par klienta kodu un rādījumu iesniegšanu."
       />
     </div>
   );

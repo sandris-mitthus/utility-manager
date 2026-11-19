@@ -13,10 +13,10 @@ import {
   modalFooterClassName,
 } from "@/app/components/ui/form-styles";
 import { IconInput } from "@/app/components/ui/icon-input";
-import { IconGauge, IconHash, IconLink, IconMapPin, IconSave, IconX } from "@/app/components/ui/icons";
+import { IconGauge, IconHash, IconLink, IconMail, IconMapPin, IconPhone, IconSave, IconUsers, IconX } from "@/app/components/ui/icons";
 import { TooltipIconButton } from "@/app/components/ui/tooltip-button";
 import { useModalKeyboard } from "@/app/components/ui/use-modal-keyboard";
-import { METER_TYPE_LABELS, normalizeLookup } from "@/app/lib/utility/helpers";
+import { formatMeterTypeLabel, normalizeLookup } from "@/app/lib/utility/helpers";
 import { runPendingAction } from "@/app/lib/run-pending-action";
 import type { UtilityClient, UtilityMeter } from "@/app/lib/utility/types";
 
@@ -35,7 +35,7 @@ function meterMatchesQuery(meter: UtilityMeter, query: string): boolean {
   }
 
   const haystack = normalizeLookup(
-    `${meter.number} ${METER_TYPE_LABELS[meter.type]} ${meter.location}`,
+    `${meter.number} ${meter.typeCode} ${formatMeterTypeLabel(meter)} ${meter.address} ${meter.location}`,
   );
   return haystack.includes(normalized);
 }
@@ -43,7 +43,12 @@ function meterMatchesQuery(meter: UtilityMeter, query: string): boolean {
 export function ClientFormModal({ client, isExisting, onClose }: ClientFormModalProps) {
   const { state, saveClient, syncClientMeters } = useAdminData();
   const [clientNumber, setClientNumber] = useState(client.clientNumber);
+  const [name, setName] = useState(client.name);
   const [address, setAddress] = useState(client.address);
+  const [email, setEmail] = useState(client.email);
+  const [phone, setPhone] = useState(client.phone);
+  const [phoneExtra, setPhoneExtra] = useState(client.phoneExtra);
+  const [extraCode, setExtraCode] = useState(client.extraCode);
   const [attachedIds, setAttachedIds] = useState<string[]>(client.meterIds);
   const [query, setQuery] = useState("");
   const [hintsOpen, setHintsOpen] = useState(false);
@@ -66,14 +71,34 @@ export function ClientFormModal({ client, isExisting, onClose }: ClientFormModal
       return true;
     }
 
+    if (name.trim() !== client.name.trim()) {
+      return true;
+    }
+
     if (address.trim() !== client.address.trim()) {
+      return true;
+    }
+
+    if (email.trim() !== client.email.trim()) {
+      return true;
+    }
+
+    if (phone.trim() !== client.phone.trim()) {
+      return true;
+    }
+
+    if (phoneExtra.trim() !== client.phoneExtra.trim()) {
+      return true;
+    }
+
+    if (extraCode.trim() !== client.extraCode.trim()) {
       return true;
     }
 
     const currentIds = [...attachedIds].sort().join(",");
     const initialIds = [...client.meterIds].sort().join(",");
     return currentIds !== initialIds;
-  }, [query, clientNumber, address, attachedIds, client]);
+  }, [query, clientNumber, name, address, email, phone, phoneExtra, extraCode, attachedIds, client]);
 
   const { confirmCloseOpen, requestBackdropClose, dismissConfirmClose, confirmClose } =
     useModalKeyboard({
@@ -155,7 +180,12 @@ export function ClientFormModal({ client, isExisting, onClose }: ClientFormModal
     const savedClient: UtilityClient = {
       ...client,
       clientNumber: trimmedNumber,
+      name: name.trim(),
       address: trimmedAddress,
+      email: email.trim(),
+      phone: phone.trim(),
+      phoneExtra: phoneExtra.trim(),
+      extraCode: extraCode.trim(),
       meterIds: attachedIds,
     };
 
@@ -215,14 +245,27 @@ export function ClientFormModal({ client, isExisting, onClose }: ClientFormModal
             <div className="space-y-4">
               <div>
                 <label htmlFor="client-number" className={labelClassName}>
-                  Klienta numurs
+                  Klienta kods
                 </label>
                 <IconInput
                   id="client-number"
                   value={clientNumber}
                   onChange={(event) => setClientNumber(event.target.value)}
-                  placeholder="piem., 12345"
+                  placeholder="piem., 01012A"
                   icon={<IconHash className="size-4" />}
+                  wrapperClassName="mt-1"
+                />
+              </div>
+              <div>
+                <label htmlFor="client-name" className={labelClassName}>
+                  Nosaukums
+                </label>
+                <IconInput
+                  id="client-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="piem., Bērziņš Jānis"
+                  icon={<IconUsers className="size-4" />}
                   wrapperClassName="mt-1"
                 />
               </div>
@@ -236,6 +279,62 @@ export function ClientFormModal({ client, isExisting, onClose }: ClientFormModal
                   onChange={(event) => setAddress(event.target.value)}
                   placeholder="piem., Brīvības iela 1, Rīga"
                   icon={<IconMapPin className="size-4" />}
+                  wrapperClassName="mt-1"
+                />
+              </div>
+              <div>
+                <label htmlFor="client-email" className={labelClassName}>
+                  E-pasts
+                </label>
+                <IconInput
+                  id="client-email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="piem., klientam@example.com"
+                  icon={<IconMail className="size-4" />}
+                  wrapperClassName="mt-1"
+                />
+              </div>
+              <div>
+                <label htmlFor="client-phone" className={labelClassName}>
+                  Tālrunis
+                </label>
+                <IconInput
+                  id="client-phone"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  placeholder="piem., +371 20000000"
+                  icon={<IconPhone className="size-4" />}
+                  wrapperClassName="mt-1"
+                />
+                <p className="mt-1 text-xs text-zinc-500">
+                  Ja aizpildīts, WhatsApp rādījumu imports pārbauda, ka sūtītāja numurs sakrīt.
+                </p>
+              </div>
+              <div>
+                <label htmlFor="client-phone-extra" className={labelClassName}>
+                  Papildu tālrunis
+                </label>
+                <IconInput
+                  id="client-phone-extra"
+                  value={phoneExtra}
+                  onChange={(event) => setPhoneExtra(event.target.value)}
+                  placeholder="piem., 26000000"
+                  icon={<IconPhone className="size-4" />}
+                  wrapperClassName="mt-1"
+                />
+              </div>
+              <div>
+                <label htmlFor="client-extra-code" className={labelClassName}>
+                  Papildu kods
+                </label>
+                <IconInput
+                  id="client-extra-code"
+                  value={extraCode}
+                  onChange={(event) => setExtraCode(event.target.value)}
+                  placeholder="CUVc 146. lauks"
+                  icon={<IconHash className="size-4" />}
                   wrapperClassName="mt-1"
                 />
               </div>
@@ -253,8 +352,12 @@ export function ClientFormModal({ client, isExisting, onClose }: ClientFormModal
                       className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm"
                     >
                       <span className="text-zinc-800">
-                        <span className="font-medium text-zinc-900">{meter.number}</span> ·{" "}
-                        {METER_TYPE_LABELS[meter.type]} · {meter.location}
+                        <span className="font-medium text-zinc-900">{meter.number}</span>
+                        {" "}
+                        {formatMeterTypeLabel(meter)}
+                        {meter.address || meter.location
+                          ? ` ${meter.address || meter.location}`
+                          : ""}
                       </span>
                       <TooltipIconButton
                         tooltip="Noņemt"
@@ -316,7 +419,10 @@ export function ClientFormModal({ client, isExisting, onClose }: ClientFormModal
                           <span>
                             <span className="block font-medium text-zinc-900">{meter.number}</span>
                             <span className="block text-zinc-500">
-                              {METER_TYPE_LABELS[meter.type]} · {meter.location}
+                              {formatMeterTypeLabel(meter)}
+                              {meter.address || meter.location
+                                ? ` ${meter.address || meter.location}`
+                                : ""}
                               {meter.clientId && meter.clientId !== client.id
                                 ? " · pie cita klienta"
                                 : ""}

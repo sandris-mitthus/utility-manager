@@ -561,7 +561,7 @@ export function parseMeterEmail(subject: string, body: string): ParsedMeterEmail
   const addressHint = extractAddressHint(subjectText, bodyText);
 
   if (!clientNumber && !addressHint) {
-    warnings.push("Nav atrasts klienta numurs vai adrese.");
+    warnings.push("Nav atrasts klienta kods vai adrese.");
   }
 
   const readings = dedupeReadings([

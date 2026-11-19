@@ -1,8 +1,9 @@
 import { createElement, Fragment, type ReactNode } from "react";
 import type { FaqItem } from "@/app/components/faq-accordion";
+import { readingWindowHint } from "@/app/lib/utility/reading-window";
 import type { PublicContactSettings } from "@/app/lib/utility/types";
 
-export const READING_SUBMISSION_TEMPLATE = `Klienta numurs: KLIENTA NUMURS
+export const READING_SUBMISSION_TEMPLATE = `Klienta kods: KLIENTA KODS
 Aukstais ūdens: AUKSTA ŪDENS RĀDĪJUMI
 Karstais ūdens: KARSTA ŪDENS RĀDĪJUMI
 Kanalizācija: KANALIZĀCIJAS RĀDĪJUMI`;
@@ -27,17 +28,16 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
   const readingSubmissionTemplate =
     trimmed(settings.readingSubmissionTemplate) || READING_SUBMISSION_TEMPLATE;
 
-  return [
+  const items: FaqItem[] = [
     {
       id: "where-client-number",
-      question: "Kur atrodams klienta numurs?",
-      answer: "Klienta numurs parasti ir norādīts rēķinā.",
+      question: "Kur atrodams klienta kods?",
+      answer: "Klienta kods parasti ir norādīts rēķinā.",
     },
     {
       id: "use-address",
       question: "Vai var meklēt pēc adreses?",
-      answer:
-        "Jā. Ievadiet objekta adresi tā, kā tā norādīta rēķinā vai līgumā, piemēram, ielas nosaukumu, mājas numuru un pilsētu.",
+      answer: "Nē. Ievadiet klienta kodu tā, kā tas norādīts rēķinā, piemēram, 01012A.",
     },
     {
       id: "phone-call",
@@ -57,7 +57,7 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
         ? contactAnswer(
             "Sūtiet SMS uz ",
             smsNumber,
-            ". Ziņojumā norādiet klienta numuru un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.",
+            ". Ziņojumā norādiet klienta kodu un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.",
           )
         : "SMS numurs vēl nav norādīts. Sazinieties ar administratoru.",
       copyTemplate: smsNumber ? readingSubmissionTemplate : undefined,
@@ -70,7 +70,7 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
         ? contactAnswer(
             "WhatsApp ziņas sūtiet uz ",
             whatsappNumber,
-            ". Pievienojiet klienta numuru un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.",
+            ". Pievienojiet klienta kodu un skaitītāju rādījumus. Zemāk ir teksts, ko varat nokopēt un aizpildīt.",
           )
         : "WhatsApp numurs vēl nav norādīts. Sazinieties ar administratoru.",
       copyTemplate: whatsappNumber ? readingSubmissionTemplate : undefined,
@@ -96,4 +96,14 @@ export function buildFaqItems(settings: PublicContactSettings): FaqItem[] {
         "Pārbaudiet pareizrakstību un vai nav lieku atstarpju. Ja meklēšana joprojām neizdodas, sazinieties ar klientu apkalpošanu.",
     },
   ];
+
+  if (settings.readingWindowDays > 0) {
+    items.unshift({
+      id: "reading-window",
+      question: "Kad var nodot rādījumus?",
+      answer: readingWindowHint(settings.readingWindowDays),
+    });
+  }
+
+  return items;
 }

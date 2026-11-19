@@ -1,5 +1,5 @@
-import { AdminPanel } from "@/app/components/admin/admin-panel";
+import { redirect } from "next/navigation";
 
-export default async function AdminPage() {
-  return <AdminPanel />;
+export default function AdminPage() {
+  redirect("/admin/submissions");
 }

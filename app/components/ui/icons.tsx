@@ -217,6 +217,16 @@ export function IconMail({ className = defaultClassName }: IconProps) {
   );
 }
 
+export function IconDownload({ className = defaultClassName }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden="true">
+      <path d="M12 3v12" />
+      <path d="m7 11 5 5 5-5" />
+      <path d="M5 21h14" />
+    </svg>
+  );
+}
+
 export function IconRefresh({ className = defaultClassName }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} aria-hidden="true">

@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
+import { supabaseFetch } from "@/app/lib/supabase/fetch";
 import { getSupabasePublicEnv } from "@/app/lib/supabase/env";
 
 export function createClient() {
@@ -9,5 +10,7 @@ export function createClient() {
     );
   }
 
-  return createBrowserClient(env.url, env.anonKey);
+  return createBrowserClient(env.url, env.anonKey, {
+    global: { fetch: supabaseFetch },
+  });
 }

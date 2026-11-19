@@ -82,7 +82,8 @@ export function ClientDirectReadingPanel({ token }: ClientDirectReadingPanelProp
         client={lookupResult.client}
         meters={lookupResult.meters}
         submissionToken={lookupResult.submissionToken}
-        hasSubmissionThisMonth={lookupResult.hasSubmissionThisMonth}
+        submittedReadings={lookupResult.submittedReadings}
+        submittedPreviousReadings={lookupResult.submittedPreviousReadings}
         onBack={() => {
           window.location.href = "/";
         }}

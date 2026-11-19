@@ -38,7 +38,9 @@ function clientMatchesQuery(client: UtilityClient, query: string): boolean {
     return false;
   }
 
-  const haystack = normalizeLookup(`${client.clientNumber} ${client.address}`);
+  const haystack = normalizeLookup(
+    `${client.clientNumber} ${client.name} ${client.address} ${client.phone}`,
+  );
   return haystack.includes(normalized);
 }
 
@@ -188,6 +190,9 @@ export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
               <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm">
                 <p className="text-zinc-500">Pašreizējā adrese</p>
                 <p className="font-medium text-zinc-900">{currentClient.address}</p>
+                {currentClient.name ? (
+                  <p className="text-zinc-500">{currentClient.name}</p>
+                ) : null}
                 <p className="text-zinc-500">{currentClient.clientNumber}</p>
               </div>
             ) : null}
@@ -201,7 +206,7 @@ export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
                 type="text"
                 value={query}
                 autoComplete="off"
-                placeholder="piem., Brīvības iela 1 vai 12345"
+                placeholder="piem., 01012A vai Brīvības iela 1"
                 role="combobox"
                 aria-expanded={hintsOpen && hints.length > 0}
                 aria-controls="meter-address-hints"
@@ -239,6 +244,9 @@ export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
                           <IconLink className="mt-0.5 size-3.5 shrink-0 text-zinc-400" />
                           <span>
                             <span className="block font-medium text-zinc-900">{client.address}</span>
+                            {client.name ? (
+                              <span className="block text-zinc-500">{client.name}</span>
+                            ) : null}
                             <span className="block text-zinc-500">{client.clientNumber}</span>
                           </span>
                         </button>
@@ -253,11 +261,14 @@ export function MeterAddressModal({ meter, onClose }: MeterAddressModalProps) {
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
                 <p className="text-emerald-800">Izvēlētā adrese piesaistīšanai</p>
                 <p className="font-medium text-emerald-950">{selectedClient.address}</p>
+                {selectedClient.name ? (
+                  <p className="text-emerald-800">{selectedClient.name}</p>
+                ) : null}
                 <p className="text-emerald-800">{selectedClient.clientNumber}</p>
               </div>
             ) : (
               <p className="text-sm text-zinc-500">
-                Ievadiet adresi vai klienta numuru un izvēlieties no hint saraksta.
+                Ievadiet klienta kodu, vārdu vai adresi un izvēlieties no hint saraksta.
               </p>
             )}
           </div>

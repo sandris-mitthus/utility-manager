@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { supabaseFetch } from "@/app/lib/supabase/fetch";
 import { isSupabaseAdminConfigured } from "@/app/lib/supabase/env";
 
 export function createAdminClient() {
@@ -15,6 +16,9 @@ export function createAdminClient() {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
+      },
+      global: {
+        fetch: supabaseFetch,
       },
     },
   );

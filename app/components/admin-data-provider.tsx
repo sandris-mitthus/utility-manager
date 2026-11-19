@@ -235,6 +235,7 @@ export function AdminDataProvider({
         whatsappNumber: settings.whatsappNumber,
         phoneNumber: settings.phoneNumber,
         readingSubmissionTemplate: settings.readingSubmissionTemplate,
+        readingWindowDays: settings.readingWindowDays,
         imapHost: settings.imapHost,
         emailPassword: settings.emailPassword,
         whatsappMode: settings.whatsappMode,
@@ -428,22 +429,34 @@ export function createEmptyClient(): UtilityClient {
   return {
     id: crypto.randomUUID(),
     clientNumber: "",
+    name: "",
     address: "",
+    email: "",
+    phone: "",
+    phoneExtra: "",
+    extraCode: "",
     meterIds: [],
     publicToken: "",
   };
 }
 
 export function createEmptyMeter(clientId = ""): UtilityMeter {
+  const today = todayIsoDate();
   return {
     id: crypto.randomUUID(),
     number: "",
     type: "cold_water",
-    verificationDate: todayIsoDate(),
+    typeCode: "",
+    verificationDate: today,
+    validUntil: today,
     clientId,
     location: "",
+    address: "",
     previousReading: 0,
     baselineReading: 0,
+    readingRegisteredOn: "",
+    readingPeriodEnd: "",
+    readingRecordNumber: "",
   };
 }
 

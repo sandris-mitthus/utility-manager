@@ -1,4 +1,6 @@
 import { isContactEmailTransportConfigured } from "@/app/lib/utility/email-password";
+import { formatReading } from "@/app/lib/utility/helpers";
+import { getResendCredentials } from "@/app/lib/utility/integrations";
 import { loadContactEmailCredentials } from "@/app/lib/utility/contact-settings-credentials";
 
 type SubmissionNotificationInput = {
@@ -21,9 +23,56 @@ function getSmtpUser(fallbackEmail: string): string {
 
 export { isContactEmailTransportConfigured };
 
+function notificationText(input: SubmissionNotificationInput): { subject: string; text: string } {
+  const lines = Object.values(input.readings).map(
+    (item) => `${item.meterNumber}: ${formatReading(item.value)}`,
+  );
+  return {
+    subject: `Rādījumi iesniegti — ${input.clientNumber} (${input.month})`,
+    text: [
+      `Klienta kods: ${input.clientNumber}`,
+      `Adrese: ${input.address}`,
+      `Mēnesis: ${input.month}`,
+      "",
+      ...lines,
+    ].join("\n"),
+  };
+}
+
+async function sendWithResend(
+  input: SubmissionNotificationInput,
+  credentials: { fromEmail: string; apiKey: string; replyToEmail: string },
+): Promise<void> {
+  const message = notificationText(input);
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${credentials.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: credentials.fromEmail,
+      to: input.to,
+      ...(credentials.replyToEmail ? { reply_to: credentials.replyToEmail } : {}),
+      subject: message.subject,
+      text: message.text,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Resend neizdevās nosūtīt e-pastu.");
+  }
+}
+
 export async function sendSubmissionNotificationEmail(
   input: SubmissionNotificationInput,
 ): Promise<void> {
+  const resend = await getResendCredentials().catch(() => null);
+  if (resend) {
+    await sendWithResend(input, resend);
+    return;
+  }
+
   const host = process.env.CONTACT_SMTP_HOST?.trim();
   if (!host) {
     return;
@@ -54,20 +103,11 @@ export async function sendSubmissionNotificationEmail(
     },
   });
 
-  const lines = Object.values(input.readings).map(
-    (item) => `${item.meterNumber}: ${item.value}`,
-  );
-
+  const message = notificationText(input);
   await transport.sendMail({
     from: getSmtpUser(input.to),
     to: input.to,
-    subject: `Rādījumi iesniegti — ${input.clientNumber} (${input.month})`,
-    text: [
-      `Klienta numurs: ${input.clientNumber}`,
-      `Adrese: ${input.address}`,
-      `Mēnesis: ${input.month}`,
-      "",
-      ...lines,
-    ].join("\n"),
+    subject: message.subject,
+    text: message.text,
   });
 }

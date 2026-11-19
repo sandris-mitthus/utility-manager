@@ -1,3 +1,4 @@
+import { AdminPanel } from "@/app/components/admin/admin-panel";
 import { AdminLoginGate } from "@/app/components/admin/admin-login-gate";
 import { AdminDataProvider } from "@/app/components/admin-data-provider";
 import { getAdminAccess } from "@/app/lib/auth/get-admin-access";
@@ -29,7 +30,9 @@ export default async function AdminLayout({
 
   return (
     <AdminDataProvider admin={access.admin} initialState={initialState} csrfToken={csrfToken}>
-      <main className="page">{children}</main>
+      <main className="page">
+        <AdminPanel>{children}</AdminPanel>
+      </main>
     </AdminDataProvider>
   );
 }

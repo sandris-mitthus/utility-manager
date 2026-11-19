@@ -1,20 +1,36 @@
-export type MeterType = "hot_water" | "cold_water" | "sewage";
+export type MeterType = "hot_water" | "cold_water" | "sewage" | "heating";
 
 export type UtilityMeter = {
   id: string;
   number: string;
   type: MeterType;
+  /** Eksporta tips, piemēram AU01 vai KU01. */
+  typeCode: string;
   verificationDate: string;
+  /** Derīguma termiņš (YYYY-MM-DD) vai tukša virkne. */
+  validUntil: string;
   clientId: string;
   location: string;
+  /** Objekta adrese, ja klientam ir vairākas adreses. */
+  address: string;
   previousReading: number;
   baselineReading: number;
+  readingRegisteredOn: string;
+  readingPeriodEnd: string;
+  readingRecordNumber: string;
 };
 
 export type UtilityClient = {
   id: string;
   clientNumber: string;
+  name: string;
   address: string;
+  email: string;
+  /** Optional WhatsApp / phone for inbound sender verification. Empty = skip phone check. */
+  phone: string;
+  phoneExtra: string;
+  /** CUVc 146. lauks. */
+  extraCode: string;
   meterIds: string[];
   publicToken: string;
 };
@@ -36,6 +52,8 @@ export type PublicContactSettings = {
   whatsappNumber: string;
   phoneNumber: string;
   readingSubmissionTemplate: string;
+  /** 0 = visu mēnesi. Citādi tikai pēdējās tik dienas. */
+  readingWindowDays: number;
   whatsappMode: WhatsappMode;
   whatsappMessageTemplate: string;
 };
@@ -52,7 +70,7 @@ export type AdminContactSettings = PublicContactSettings & {
   whatsappApiConfigured: boolean;
 };
 
-export type ContactSettingsUpdate = PublicContactSettings & {
+export type ContactSettingsUpdate = Partial<PublicContactSettings> & {
   imapHost?: string;
   emailPassword?: string;
   whatsappPhoneNumberId?: string;
@@ -109,6 +127,22 @@ export type EmailFetchSummary = {
   parseStatusCounts: Record<string, number>;
 };
 
+export type WhatsappInboxMessage = {
+  id: string;
+  waMessageId: string;
+  fromWaId: string;
+  fromProfileName: string;
+  bodyText: string;
+  receivedAt: string | null;
+  parsed: ParsedMeterEmail;
+  parseStatus: "pending" | "parsed" | "partial" | "failed";
+  fetchedAt: string;
+  submissionImportedAt: string | null;
+  submissionMonth: string | null;
+  submissionClientId: string | null;
+  submissionImportError: string;
+};
+
 export type UtilityState = {
   clients: UtilityClient[];
   meters: UtilityMeter[];
@@ -123,6 +157,11 @@ export type PublicPageSettings = {
 export type PublicLookupResult = {
   client: UtilityClient;
   meters: UtilityMeter[];
+  /** True only when every current meter already has a reading this month. */
   hasSubmissionThisMonth: boolean;
+  /** Readings already stored this month. The public form locks these meters. */
+  submittedReadings: Record<string, number>;
+  /** Baseline saved with those readings, before the meter was updated. */
+  submittedPreviousReadings: Record<string, number>;
   submissionToken: string;
 };
