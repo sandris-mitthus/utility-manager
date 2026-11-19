@@ -1,6 +1,6 @@
 {
   "name": "utility-manager",
-  "version": "1.0.32",
+  "version": "1.0.33",
   "private": true,
   "scripts": {
     "dev": "node --max-http-header-size=65536 ./node_modules/next/dist/bin/next dev -p 3001",
@@ -18,12 +18,12 @@
     "@supabase/supabase-js": "^2.108.1",
     "googleapis": "^173.0.0",
     "imapflow": "^1.4.1",
-    "mailparser": "^3.9.14",
-    "next": "16.2.12",
-    "nodemailer": "^9.0.1",
+    "mailparser": "^3.14.5",
+    "next": "16.4.6",
+    "nodemailer": "^10.6.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -33,15 +33,19 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.4.6",
     "pg": "^8.21.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
   "overrides": {
-    "nodemailer": "^9.0.1",
+    "nodemailer": "^10.6.0",
     "postcss": "^8.5.18",
-    "sharp": "^0.35.0",
-    "gaxios": "^7.3.0"
+    "sharp": "^0.35.5",
+    "gaxios": "^7.3.0",
+    "deepmerge-ts": "^8.0.2",
+    "ip-address": "^10.7.6",
+    "nanoid": "^3.3.20",
+    "source-map-js": "^1.2.4"
   }
 }

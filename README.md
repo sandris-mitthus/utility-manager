@@ -2,7 +2,7 @@
 
 Next.js app for utility readings — public client lookup, admin panel, Supabase Postgres. Based on patterns from [estimate-builder](https://github.com/sandris-mitthus/estimate-builder).
 
-**Current version:** `1.0.32` (see [Changelog](#changelog))
+**Current version:** `1.0.33` (see [Changelog](#changelog))
 
 ---
 
@@ -360,6 +360,10 @@ Cursor rules:
 ### Unreleased
 
 - (none)
+
+### v1.0.33
+
+- **Drošības atjauninājumi** — `next` 16.4.6, `nodemailer` 10.6.0, `mailparser` 3.14.5, `zod` 4.6.7, `sharp` ≥ 0.35.5; overrides `deepmerge-ts`, `ip-address`, `nanoid` un `source-map-js`, lai produkcijas `npm audit` vairs nebloķētu high un critical
 
 ### v1.0.32
 
